@@ -10,7 +10,7 @@
 
 // Khai báo hàm xử lý (định nghĩa trong file_handler.c)
 void req_upload(int sock, char *group_name, char *filename);
-void req_download(int sock, char *group_name, char *filename);
+void req_download(int sock, char *group_name, char *filename, char *dest_folder);
 
 #define SERVER_IP "127.0.0.1"
 #define PORT 8080
@@ -93,12 +93,25 @@ int main() {
 
             case 3: // Download
                 {
-                    char group[50], path[100];
-                    printf("Source Group: "); fgets(group, 50, stdin); trim_newline(group);
-                    printf("Filename: "); fgets(path, 100, stdin); trim_newline(path);
+                    char group[50], filename[100], dest[256];
                     
-                    // Gọi hàm xử lý trong file_handler.c
-                    req_download(sock, group, path);
+                    printf("Source Group: "); 
+                    fgets(group, 50, stdin); trim_newline(group);
+                    
+                    printf("Filename: "); 
+                    fgets(filename, 100, stdin); trim_newline(filename);
+                    
+                    // Hỏi người dùng nơi lưu file
+                    printf("Save to Folder (e.g., /mnt/c/Users/ADMIN/Downloads): ");
+                    fgets(dest, 256, stdin); trim_newline(dest);
+
+                    // Nếu người dùng không nhập gì, có thể set mặc định (tùy chọn)
+                    if (strlen(dest) == 0) {
+                        strcpy(dest, "client_storage"); // Mặc định cũ nếu lười nhập
+                    }
+                    
+                    // Gọi hàm với tham số mới
+                    req_download(sock, group, filename, dest);
                 }
                 break;
 
