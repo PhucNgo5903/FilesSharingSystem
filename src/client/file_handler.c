@@ -7,29 +7,37 @@
 #include <sys/socket.h>
 
 // Client gửi yêu cầu upload file
-void req_upload(int sock, char *group_name, char *filename) {
-    char filepath[512];
-    sprintf(filepath, "client_storage/%s", filename); // Lấy file từ folder client
-
-    FILE *fp = fopen(filepath, "rb");
+void req_upload(int sock, char *group_name, char *path) {
+    // 1. Mở file theo đường dẫn đầy đủ người dùng nhập (VD: /mnt/c/Users/Anh/hinh.jpg)
+    FILE *fp = fopen(path, "rb");
     if (!fp) {
-        printf("[Client] Error: File %s not found.\n", filepath);
+        printf("[Client] Error: Cannot open file at %s\n", path);
         return;
     }
 
-    // Lấy size
+    // 2. Lấy tên file gốc từ đường dẫn (Tách bỏ phần /mnt/c/...)
+    // Ví dụ: /mnt/c/data/image.png -> lấy "image.png"
+    char *filename = strrchr(path, '/'); 
+    if (filename) {
+        filename++; // Bỏ qua dấu gạch chéo '/'
+    } else {
+        filename = path; // Nếu không có dấu gạch chéo, chính là tên file
+    }
+
+    // 3. Lấy kích thước file
     fseek(fp, 0, SEEK_END);
     long filesize = ftell(fp);
     rewind(fp);
 
-    // 1. Gửi lệnh UPLOAD (Giả lập checksum là "dummy_checksum")
+    // 4. Gửi lệnh UPLOAD với TÊN FILE GỐC (Clean filename)
     char cmd[1024];
     sprintf(cmd, "UPLOAD %s \"%s\" %ld dummy_checksum\n", group_name, filename, filesize);
     send(sock, cmd, strlen(cmd), 0);
 
-    // 2. Đợi phản hồi READY
+    // 5. Đợi Server phản hồi READY
     char response[1024];
     int len = recv(sock, response, 1023, 0);
+    if (len <= 0) { printf("Server disconnected\n"); fclose(fp); return; }
     response[len] = 0;
 
     if (strstr(response, "READY_UPLOAD") == NULL) {
@@ -38,11 +46,11 @@ void req_upload(int sock, char *group_name, char *filename) {
         return;
     }
 
-    // 3. Bắt đầu gửi chunk
-    printf("[Client] Uploading...\n");
-    char buffer[BUFFER_SIZE];
+    // 6. Bắt đầu gửi chunk
+    printf("[Client] Uploading file: %s (%ld bytes)...\n", filename, filesize);
+    char buffer[4096]; // BUFFER_SIZE
     int bytes_read;
-    while ((bytes_read = fread(buffer, 1, BUFFER_SIZE, fp)) > 0) {
+    while ((bytes_read = fread(buffer, 1, 4096, fp)) > 0) {
         send_chunk(sock, buffer, bytes_read);
     }
     // Gửi chunk kết thúc
@@ -50,7 +58,7 @@ void req_upload(int sock, char *group_name, char *filename) {
 
     fclose(fp);
 
-    // 4. Đợi kết quả cuối cùng
+    // 7. Nhận kết quả cuối cùng
     len = recv(sock, response, 1023, 0);
     response[len] = 0;
     printf("[Client] Server response: %s", response);

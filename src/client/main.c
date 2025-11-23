@@ -80,11 +80,13 @@ int main() {
                 
             case 2: // Upload
                 {
-                    char group[50], path[100];
+                    char group[50], path[256]; // Tăng size path lên để chứa đường dẫn dài
                     printf("Target Group: "); fgets(group, 50, stdin); trim_newline(group);
-                    printf("Filename (in client_storage/): "); fgets(path, 100, stdin); trim_newline(path);
                     
-                    // Gọi hàm xử lý trong file_handler.c
+                    // Sửa dòng thông báo này:
+                    printf("File Path (e.g., /mnt/c/Users/Name/Photo.jpg): "); 
+                    fgets(path, 256, stdin); trim_newline(path);
+                    
                     req_upload(sock, group, path);
                 }
                 break;
