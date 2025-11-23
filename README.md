@@ -28,7 +28,7 @@ FileSharingSystem/
         ├── main.c          # Giao diện dòng lệnh (Menu)
         ├── file_handler.c  # Xử lý đọc file local để gửi đi
         └── ...
-
+```
 Client Side:
 <img width="1208" height="263" alt="image" src="https://github.com/user-attachments/assets/d35220a0-6728-4178-8b84-4625dff5bc95" />
 Server Side:
