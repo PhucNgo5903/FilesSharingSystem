@@ -29,8 +29,10 @@ FileSharingSystem/
         ├── file_handler.c  # Xử lý đọc file local để gửi đi
         └── ...
 ```
-Client Side:
-<img width="1208" height="263" alt="image" src="https://github.com/user-attachments/assets/d35220a0-6728-4178-8b84-4625dff5bc95" />
-Server Side:
-<img width="1447" height="223" alt="image" src="https://github.com/user-attachments/assets/c56b3e5c-6f1e-498d-a05b-88b845ff7a88" />
+Upload in Client Side & Server Side:
+<img width="1919" height="314" alt="image" src="https://github.com/user-attachments/assets/ac827f16-a004-43d1-b052-d081775ff3d3" />
+
+Download in Client Side & Server Side:
+<img width="1919" height="310" alt="image" src="https://github.com/user-attachments/assets/5ac4285a-fad8-4645-9d50-65041633baab" />
+
 
