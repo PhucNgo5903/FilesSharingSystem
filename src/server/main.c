@@ -15,7 +15,7 @@
 void handle_upload(int client_sock, char *group_name, char *filename, long filesize);
 void handle_download(int client_sock, char *group_name, char *filename);
 
-#define PORT 8080
+#define PORT 5555
 
 // Xử lý zombie process
 void sigchld_handler(int sig) {

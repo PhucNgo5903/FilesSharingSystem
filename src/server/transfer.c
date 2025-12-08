@@ -1,6 +1,7 @@
 // File: src/server/transfer.c
 #include "../common/protocol.h"
 #include "../common/network.h"
+#include "../common/utils.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -9,6 +10,7 @@
 
 // Xử lý khi Client UPLOAD
 // Đã thêm tham số 'filesize' để in log
+// Xử lý khi Client UPLOAD
 void handle_upload(int client_sock, char *group_name, char *filename, long filesize) {
     char filepath[512];
     sprintf(filepath, "storage/%s/%s", group_name, filename);
@@ -20,15 +22,17 @@ void handle_upload(int client_sock, char *group_name, char *filename, long files
         return;
     }
 
-    // 1. Gửi xác nhận sẵn sàng
-    char *msg = "OK 200 READY_UPLOAD\n";
+    // Gửi xác nhận sẵn sàng
+    char *msg = "READY_UPLOAD 200\n";
     send(client_sock, msg, strlen(msg), 0);
     
-    // --- SỬA LOG 1: READY-UPLOAD ---
-    printf("OK 200 READY-UPLOAD %s \"%s\" %ld\n", group_name, filename, filesize);
-    // -------------------------------
+    // Tính tổng số chunk dự kiến
+    long total_chunks = (filesize + BUFFER_SIZE - 1) / BUFFER_SIZE;
+    if (total_chunks == 0) total_chunks = 1; // Tránh chia cho 0 nếu file rỗng
 
-    // 2. Vòng lặp nhận chunk
+    printf("READY-UPLOAD 200 %s \"%s\" %ld )\n", group_name, filename, filesize);
+
+    // Vòng lặp nhận chunk
     char buffer[BUFFER_SIZE];
     int chunk_len;
     long total_received = 0;
@@ -36,23 +40,25 @@ void handle_upload(int client_sock, char *group_name, char *filename, long files
 
     while ((chunk_len = recv_chunk(client_sock, buffer)) > 0) {
         fwrite(buffer, 1, chunk_len, fp);
-        
         total_received += chunk_len;
         chunk_count++;
         
-        // --- SỬA LOG 2: Chunk info (Bỏ tiền tố cũ) ---
-        printf("Chunk #%d: Received %d bytes | Total: %ld bytes\n", chunk_count, chunk_len, total_received);
-        // ---------------------------------------------
+        // --- LOG MỚI ĐÚNG FORMAT YÊU CẦU ---
+        // UPLOAD 200 <filesize> <current>/<total> <filename> <base64>
+        char *b64 = base64_encode((unsigned char*)buffer, chunk_len);
+        if (b64) {
+            printf("UPLOAD 200 %ld %d/%ld %s %s\n", filesize, chunk_count, total_chunks, filename, b64);
+            free(b64); // Giải phóng bộ nhớ Base64
+        }
+        // -----------------------------------
     }
 
     fclose(fp);
     
-    // 3. Gửi xác nhận hoàn tất
-    send(client_sock, "OK 200 UPLOAD DONE\n", 19, 0);
+    // Gửi xác nhận hoàn tất
+    send(client_sock, "DONE-UPLOAD 200\n", 19, 0);
     
-    // --- SỬA LOG 3: DONE-UPLOAD ---
-    printf("OK 200 DONE-UPLOAD %s \"%s\" %ld\n", group_name, filename, total_received);
-    // ------------------------------
+    printf("DONE-UPLOAD 200 %s \"%s\" %ld\n", group_name, filename, total_received);
 }
 
 // Xử lý khi Client DOWNLOAD
@@ -62,7 +68,7 @@ void handle_download(int client_sock, char *group_name, char *filename) {
 
     FILE *fp = fopen(filepath, "rb");
     if (!fp) {
-        send(client_sock, "ERROR 404 FILE_NOT_FOUND\n", 25, 0);
+        send(client_sock, "FILE_NOT_FOUND 404\n", 25, 0);
         return;
     }
 
@@ -71,16 +77,18 @@ void handle_download(int client_sock, char *group_name, char *filename) {
     long filesize = ftell(fp);
     rewind(fp);
 
-    // 1. Gửi thông báo OK kèm kích thước
+    // Gửi thông báo OK kèm kích thước
     char response[256];
-    sprintf(response, "OK 200 DOWNLOAD %ld 0\n", filesize);
+    sprintf(response, "DOWNLOAD 200 %ld 0\n", filesize);
     send(client_sock, response, strlen(response), 0);
 
-    // --- SỬA LOG 1: READY-DOWNLOAD ---
-    printf("OK 200 READY-DOWNLOAD %s \"%s\" %ld\n", group_name, filename, filesize);
-    // ---------------------------------
+    // Tính tổng số chunk
+    long total_chunks = (filesize + BUFFER_SIZE - 1) / BUFFER_SIZE;
+    if (total_chunks == 0) total_chunks = 1;
 
-    // 2. Đọc file và gửi chunk
+    printf("READY-DOWNLOAD 200 %s \"%s\" %ld\n", group_name, filename, filesize);
+
+    // Đọc file và gửi chunk
     char buffer[BUFFER_SIZE];
     int bytes_read;
     long total_sent = 0;
@@ -88,21 +96,23 @@ void handle_download(int client_sock, char *group_name, char *filename) {
 
     while ((bytes_read = fread(buffer, 1, BUFFER_SIZE, fp)) > 0) {
         send_chunk(client_sock, buffer, bytes_read);
-        
         total_sent += bytes_read;
         chunk_count++;
         
-        // --- SỬA LOG 2: Chunk Info ---
-        printf("Chunk #%d: Sent %d bytes | Total: %ld bytes\n", chunk_count, bytes_read, total_sent);
-        // -----------------------------
+        // --- LOG MỚI ĐÚNG FORMAT YÊU CẦU CHO DOWNLOAD (Tùy chọn nếu bạn muốn cả download cũng hiện thế này) ---
+        // DOWNLOAD 200 <filesize> <current>/<total> <filename> <base64>
+        char *b64 = base64_encode((unsigned char*)buffer, bytes_read);
+        if (b64) {
+            printf("DOWNLOAD 200 %ld %d/%ld %s %s\n", filesize, chunk_count, total_chunks, filename, b64);
+            free(b64);
+        }
+        // -----------------------------------------------------------------------------------------------------
     }
 
-    // 3. Gửi chunk kết thúc
+    // Gửi chunk kết thúc
     send_chunk(client_sock, NULL, 0);
     
     fclose(fp);
 
-    // --- SỬA LOG 3: DONE-DOWNLOAD ---
-    printf("OK 200 DONE-DOWNLOAD %s \"%s\" %ld\n", group_name, filename, total_sent);
-    // --------------------------------
+    printf("DONE-DOWNLOAD 200 %s \"%s\" %ld\n", group_name, filename, total_sent);
 }

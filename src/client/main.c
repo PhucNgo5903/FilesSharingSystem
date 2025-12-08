@@ -13,7 +13,7 @@ void req_upload(int sock, char *group_name, char *filename);
 void req_download(int sock, char *group_name, char *filename, char *dest_folder);
 
 #define SERVER_IP "127.0.0.1"
-#define PORT 8080
+#define PORT 5555
 
 // Hàm xóa ký tự xuống dòng thừa khi dùng fgets
 void trim_newline(char *str) {
@@ -26,7 +26,6 @@ void trim_newline(char *str) {
 int main() {
     int sock;
     struct sockaddr_in addr;
-    char buffer[1024];
     char input[256];
 
     // 1. Tạo socket
@@ -52,33 +51,17 @@ int main() {
     int is_running = 1;
     while (is_running) {
         printf("\n--- FILE SHARING CLI ---\n");
-        printf("1. Login\n");
-        printf("2. Upload File\n");
-        printf("3. Download File\n");
-        printf("4. Exit\n");
+        printf("1. Upload File\n");
+        printf("2. Download File\n");
+        printf("3. Exit\n");
         printf("Your choice: ");
         
         if (fgets(input, sizeof(input), stdin) == NULL) break;
         int choice = atoi(input);
 
         switch (choice) {
-            case 1: // Login
-                {
-                    char user[50], pass[50];
-                    printf("Username: "); fgets(user, 50, stdin); trim_newline(user);
-                    printf("Password: "); fgets(pass, 50, stdin); trim_newline(pass);
-                    
-                    sprintf(buffer, "LOGIN %s %s\n", user, pass);
-                    send(sock, buffer, strlen(buffer), 0);
-                    
-                    // Nhận phản hồi
-                    int n = recv(sock, buffer, sizeof(buffer)-1, 0);
-                    buffer[n] = 0;
-                    printf("Server: %s", buffer);
-                }
-                break;
-                
-            case 2: // Upload
+            
+            case 1: // Upload
                 {
                     char group[50], path[256]; // Tăng size path lên để chứa đường dẫn dài
                     printf("Target Group: "); fgets(group, 50, stdin); trim_newline(group);
@@ -91,7 +74,7 @@ int main() {
                 }
                 break;
 
-            case 3: // Download
+            case 2: // Download
                 {
                     char group[50], filename[100], dest[256];
                     
@@ -115,7 +98,7 @@ int main() {
                 }
                 break;
 
-            case 4:
+            case 3:
                 printf("Exiting...\n");
                 is_running = 0;
                 break;
