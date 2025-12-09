@@ -6,7 +6,7 @@
 #include <sys/stat.h>
 #include <sys/socket.h>
 
-// Xử lý Upload File (Giữ nguyên)
+// Xử lý Upload File
 void req_upload(int sock, char *group_name, char *path) {
     FILE *fp = fopen(path, "rb");
     if (!fp) {
@@ -21,10 +21,12 @@ void req_upload(int sock, char *group_name, char *path) {
     long filesize = ftell(fp);
     rewind(fp);
 
+    // Gửi lệnh
     char cmd[1024];
     sprintf(cmd, "UPLOAD %s \"%s\" %ld\n", group_name, filename, filesize);
     send(sock, cmd, strlen(cmd), 0);
 
+    // Nhận phản hồi READY
     char response[1024];
     int len = recv(sock, response, 1023, 0);
     if (len <= 0) { fclose(fp); return; }
@@ -36,41 +38,51 @@ void req_upload(int sock, char *group_name, char *path) {
         return;
     }
 
-    printf("READY-UPLOAD 200 %s \"%s\" %ld\n", group_name, filename, filesize);
+    // --- SỬA LOG 1: In thông báo ngắn gọn ---
+    printf("READY_UPLOAD OK\n");
+    // --------------------------------------
+
+    // Tính tổng số chunk để hiển thị (ví dụ: 1/5)
+    long total_chunks = (filesize + BUFFER_SIZE - 1) / BUFFER_SIZE;
+    if (total_chunks == 0) total_chunks = 1;
     
     char buffer[BUFFER_SIZE];
     int bytes_read;
-    long total_sent = 0;
     int chunk_count = 0;
 
     while ((bytes_read = fread(buffer, 1, BUFFER_SIZE, fp)) > 0) {
         send_chunk(sock, buffer, bytes_read);
-        total_sent += bytes_read;
         chunk_count++;
-        printf("Chunk #%d: Sent %d bytes | Total: %ld bytes\n", chunk_count, bytes_read, total_sent);
+        
+        // --- SỬA LOG 2: In Chunk X/Y uploaded ---
+        printf("Chunk %d/%ld uploaded\n", chunk_count, total_chunks);
+        // ----------------------------------------
     }
     
     send_chunk(sock, NULL, 0);
     fclose(fp);
 
+    // Nhận phản hồi DONE
     len = recv(sock, response, 1023, 0);
     response[len] = 0;
 
+    // --- SỬA LOG 3: In DONE ngắn gọn ---
     if (strstr(response, "UPLOAD DONE")) {
-        printf("DONE-UPLOAD 200 %s \"%s\" %ld\n", group_name, filename, total_sent);
+        printf("DONE_UPLOAD OK\n");
     } else {
         printf("%s\n", response);
     }
+    // -----------------------------------
 }
 
-// Xử lý Download File (Đã chỉnh sửa: Bỏ log chunk)
+// Xử lý Download File
 void req_download(int sock, char *group_name, char *filename, char *dest_folder) {
     // 1. Gửi lệnh DOWNLOAD
     char cmd[1024];
     sprintf(cmd, "DOWNLOAD %s \"%s\"\n", group_name, filename);
     send(sock, cmd, strlen(cmd), 0);
 
-    // 2. Nhận phản hồi
+    // 2. Nhận phản hồi OK <size>
     char response[1024];
     int len = recv(sock, response, 1023, 0);
     if (len <= 0) return;
@@ -84,10 +96,11 @@ void req_download(int sock, char *group_name, char *filename, char *dest_folder)
         return;
     }
 
-    // Log bắt đầu
-    printf("READY-DOWNLOAD 200 %s \"%s\" %ld\n", group_name, filename, filesize);
+    // --- SỬA LOG 1: In thông báo ngắn gọn ---
+    printf("READY_DOWNLOAD OK\n");
+    // ----------------------------------------
 
-    // 3. Tạo đường dẫn lưu file
+    // 3. Tạo file
     char savepath[512];
     if (dest_folder[strlen(dest_folder) - 1] == '/') {
         sprintf(savepath, "%s%s", dest_folder, filename);
@@ -97,24 +110,31 @@ void req_download(int sock, char *group_name, char *filename, char *dest_folder)
 
     FILE *fp = fopen(savepath, "wb");
     if (!fp) {
-        printf("[Client] Error: Cannot create file at %s. Check permissions.\n", savepath);
+        printf("[Client] Error: Cannot create file at %s.\n", savepath);
         return;
     }
     
-    // 4. Vòng lặp nhận chunk (Không in log nữa)
+    // Tính tổng số chunk
+    long total_chunks = (filesize + BUFFER_SIZE - 1) / BUFFER_SIZE;
+    if (total_chunks == 0) total_chunks = 1;
+
+    // 4. Vòng lặp nhận chunk
     char buffer[BUFFER_SIZE];
     int chunk_len;
-    long total_received = 0;
+    int chunk_count = 0;
     
     while ((chunk_len = recv_chunk(sock, buffer)) > 0) {
         fwrite(buffer, 1, chunk_len, fp);
-        total_received += chunk_len;
-        
-        // --- ĐÃ XÓA DÒNG printf Chunk Info ---
+        chunk_count++;
+
+        // --- SỬA LOG 2: In Chunk X/Y downloaded ---
+        printf("Chunk %d/%ld downloaded\n", chunk_count, total_chunks);
+        // ------------------------------------------
     }
 
     fclose(fp);
 
-    // Log kết thúc
-    printf("DONE-DOWNLOAD 200 %s \"%s\" %ld\n", group_name, filename, total_received);
+    // --- SỬA LOG 3: In DONE ngắn gọn ---
+    printf("DONE_DOWNLOAD OK\n");
+    // -----------------------------------
 }

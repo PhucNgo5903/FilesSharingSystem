@@ -12,8 +12,9 @@
 #include "../common/network.h"
 #include "../common/utils.h"
 
-void handle_upload(int client_sock, char *group_name, char *filename, long filesize);
-void handle_download(int client_sock, char *group_name, char *filename);
+// Cập nhật Prototype: thêm char *client_name vào cuối
+void handle_upload(int client_sock, char *group_name, char *filename, long filesize, char *client_name);
+void handle_download(int client_sock, char *group_name, char *filename, char *client_name);
 
 #define PORT 5555
 
@@ -47,8 +48,7 @@ void handle_client(int client_sock) {
 
         if (n <= 0) break; 
 
-        // --- ĐÃ XÓA LOG CHUNG TẠI ĐÂY ---
-        // Chúng ta sẽ log cụ thể trong từng lệnh để control nội dung
+        // Đã bỏ log chung RECV ở đây
 
         char cmd[32], arg1[128], arg2[256], arg3[128], arg4[128];
         memset(cmd, 0, 32); memset(arg1, 0, 128); memset(arg2, 0, 256); 
@@ -56,16 +56,14 @@ void handle_client(int client_sock) {
         sscanf(buffer, "%s %s %s %s %s", cmd, arg1, arg2, arg3, arg4);
 
         if (strcmp(cmd, "LOGIN") == 0) {
-            // Log đúng bản tin nhận được
             server_log_main(client_name, "RECV", "%s", buffer);
-
             char *response = "OK 200 TOKEN dummy_token_123\n";
             send(client_sock, response, strlen(response), 0);
             strncpy(client_name, arg1, sizeof(client_name) - 1);
             server_log_main(client_name, "SEND", "OK 200 TOKEN dummy_token_123");
         } 
         else if (strcmp(cmd, "UPLOAD") == 0) {
-            // UPLOAD <group> <file> <size> -> Đã có sẵn size trong buffer
+            // Log RECV bản tin gốc
             server_log_main(client_name, "RECV", "%s", buffer);
 
             char *filename = arg2;
@@ -74,17 +72,18 @@ void handle_client(int client_sock) {
                 if (filename[strlen(filename)-1] == '"') filename[strlen(filename)-1] = 0;
             }
             long filesize = atol(arg3);
-            handle_upload(client_sock, arg1, filename, filesize);
+            
+            // Gọi hàm upload mới (thêm client_name)
+            handle_upload(client_sock, arg1, filename, filesize, client_name);
         } 
         else if (strcmp(cmd, "DOWNLOAD") == 0) {
-            // DOWNLOAD <group> <file>
             char *filename = arg2;
             if (filename[0] == '"') {
                 filename++;
                 if (filename[strlen(filename)-1] == '"') filename[strlen(filename)-1] = 0;
             }
 
-            // --- TÍNH TOÁN SIZE TRƯỚC ĐỂ IN LOG ---
+            // Tính size để log đẹp
             long filesize = 0;
             char filepath[512];
             sprintf(filepath, "storage/%s/%s", arg1, filename);
@@ -94,12 +93,12 @@ void handle_client(int client_sock) {
                 filesize = ftell(f_check);
                 fclose(f_check);
             }
-            // --------------------------------------
 
-            // Log [RECV] nhưng chèn thêm filesize vào cuối (dù client không gửi)
+            // Log RECV bản tin gốc kèm size
             server_log_main(client_name, "RECV", "DOWNLOAD %s \"%s\" %ld", arg1, filename, filesize);
             
-            handle_download(client_sock, arg1, filename);
+            // Gọi hàm download mới (thêm client_name)
+            handle_download(client_sock, arg1, filename, client_name);
         }
         else {
             server_log_main(client_name, "RECV", "%s", buffer);
