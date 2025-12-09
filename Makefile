@@ -6,8 +6,8 @@ $(shell mkdir -p bin obj/server obj/client obj/common)
 
 # Danh sách các file nguồn
 COMMON_SRC = src/common/network.c src/common/utils.c
-SERVER_SRC = src/server/main.c src/server/transfer.c $(COMMON_SRC)
-CLIENT_SRC = src/client/main.c src/client/file_handler.c $(COMMON_SRC)
+SERVER_SRC = src/server/main.c src/server/transfer.c src/server/auth_mgr.c src/server/group_mgr.c $(COMMON_SRC)
+CLIENT_SRC = src/client/main.c src/client/file_handler.c src/client/auth_handler.c $(COMMON_SRC)
 
 # Tên file chạy output
 SERVER_BIN = bin/server

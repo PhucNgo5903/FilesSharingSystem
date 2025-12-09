@@ -1,2 +1,2 @@
 coffee_lovers phuc
-study_group tung
+study_group tungtest_group
