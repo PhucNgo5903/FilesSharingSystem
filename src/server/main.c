@@ -115,7 +115,8 @@ void handle_client(int client_sock) {
                 send(client_sock, "MKGRP ERR_NOT_LOGIN\n", 20, 0);
                 server_log_main(client_name, "SEND", "MKGRP ERR_NOT_LOGIN");
             } else {
-                if (handle_mkgrp_logic(arg1)) {
+                // UPDATE: Truyền client_name vào làm trưởng nhóm
+                if (handle_mkgrp_logic(arg1, client_name)) {
                     send(client_sock, "MKGRP OK\n", 9, 0);
                     server_log_main(client_name, "SEND", "MKGRP OK");
                 } else {
@@ -140,12 +141,19 @@ void handle_client(int client_sock) {
 
         // --- FILE TRANSFER ---
         else if (strcmp(cmd, "UPLOAD") == 0) {
-            // UPLOAD <group> <file> <size>
             server_log_main(client_name, "RECV", "%s", buffer);
 
             if (!is_logged_in) {
                 send(client_sock, "UPLOAD ERR_NOT_LOGIN\n", 21, 0);
                 server_log_main(client_name, "SEND", "UPLOAD ERR_NOT_LOGIN");
+                continue;
+            }
+
+            // CHECK QUYỀN: User có trong Group không?
+            if (!check_user_in_group(client_name, arg1)) {
+                // arg1 là group_name
+                send(client_sock, "UPLOAD ERR_NO_PERMISSION\n", 25, 0);
+                server_log_main(client_name, "SEND", "UPLOAD ERR_NO_PERMISSION");
                 continue;
             }
 
@@ -156,17 +164,18 @@ void handle_client(int client_sock) {
             }
             long filesize = atol(arg3);
             
-            // Delegate to transfer.c
             handle_upload(client_sock, arg1, filename, filesize, client_name);
         } 
         else if (strcmp(cmd, "DOWNLOAD") == 0) {
             // DOWNLOAD <group> <file>
             char *filename = arg2;
+            // Xử lý bỏ dấu ngoặc kép ở tên file nếu có
             if (filename[0] == '"') {
                 filename++;
                 if (filename[strlen(filename)-1] == '"') filename[strlen(filename)-1] = 0;
             }
 
+            // 1. Kiểm tra đăng nhập
             if (!is_logged_in) {
                 server_log_main(client_name, "RECV", "DOWNLOAD %s \"%s\"", arg1, filename);
                 send(client_sock, "DOWNLOAD ERR_NOT_LOGIN\n", 23, 0);
@@ -174,7 +183,21 @@ void handle_client(int client_sock) {
                 continue;
             }
 
-            // Pre-calculate size for better logging
+            // 2. CHECK QUYỀN: User có trong Group không? (Logic mới bổ sung)
+            // arg1 chính là tên nhóm
+            if (!check_user_in_group(client_name, arg1)) {
+                // Log nhận lệnh nhưng báo thất bại kiểm tra quyền
+                server_log_main(client_name, "RECV", "DOWNLOAD %s \"%s\" (Check Permission)", arg1, filename);
+                
+                // Gửi lỗi về Client
+                send(client_sock, "DOWNLOAD ERR_NO_PERMISSION\n", 27, 0);
+                
+                // Log gửi lỗi
+                server_log_main(client_name, "SEND", "DOWNLOAD ERR_NO_PERMISSION (User not in group)");
+                continue;
+            }
+
+            // 3. Tính toán kích thước file để in log đẹp
             long filesize = 0;
             char filepath[512];
             sprintf(filepath, "storage/%s/%s", arg1, filename);
@@ -185,10 +208,10 @@ void handle_client(int client_sock) {
                 fclose(f_check);
             }
 
-            // Log with file size even though client didn't send it
+            // 4. Log lệnh hợp lệ (kèm filesize)
             server_log_main(client_name, "RECV", "DOWNLOAD %s \"%s\" %ld", arg1, filename, filesize);
             
-            // Delegate to transfer.c
+            // 5. Chuyển sang module transfer để xử lý gửi file
             handle_download(client_sock, arg1, filename, client_name);
         }
         else {

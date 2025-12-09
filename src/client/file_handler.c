@@ -33,7 +33,12 @@ void req_upload(int sock, char *group_name, char *path) {
     response[len] = 0;
 
     if (strstr(response, "READY_UPLOAD") == NULL) {
-        printf("[Client] Server Error: %s", response);
+        // Thêm check lỗi quyền
+        if (strstr(response, "ERR_NO_PERMISSION")) {
+            printf("[Client] Error: You are not a member of this group.\n");
+        } else {
+            printf("[Client] Server Error: %s", response);
+        }
         fclose(fp);
         return;
     }
@@ -92,7 +97,12 @@ void req_download(int sock, char *group_name, char *filename, char *dest_folder)
     if (strncmp(response, "DOWNLOAD 200", 12) == 0) {
         sscanf(response, "DOWNLOAD 200 %ld", &filesize);
     } else {
-        printf("[Client] Download failed: %s", response);
+        // Thêm check lỗi quyền
+        if (strstr(response, "ERR_NO_PERMISSION")) {
+            printf("[Client] Error: You are not a member of this group.\n");
+        } else {
+            printf("[Client] Download failed: %s", response);
+        }
         return;
     }
 
