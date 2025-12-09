@@ -2,6 +2,7 @@
 #include "utils.h"
 #include <stdlib.h>
 #include <stdint.h>
+#include <time.h>
 
 char *base64_encode(const unsigned char *data, size_t input_length) {
     static const char encoding_table[] = {'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
@@ -34,4 +35,15 @@ char *base64_encode(const unsigned char *data, size_t input_length) {
 
     encoded_data[output_length] = '\0';
     return encoded_data;
+}
+
+void get_current_time_str(char *buffer, size_t size) {
+    time_t rawtime;
+    struct tm *timeinfo;
+
+    time(&rawtime);
+    timeinfo = localtime(&rawtime);
+
+    // Format: [09-12-2025 12:03:21]
+    strftime(buffer, size, "[%d-%m-%Y %H:%M:%S]", timeinfo);
 }
