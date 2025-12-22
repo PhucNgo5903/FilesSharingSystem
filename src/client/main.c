@@ -117,14 +117,16 @@ int main() {
 
                 case 4: // Upload File
                     {
-                        char group[50], path[256];
-                        printf("Target Group: "); 
-                        fgets(group, 50, stdin); trim_newline(group);
+                        char destination[128], path[256];
                         
-                        printf("File Path (e.g., /mnt/c/Users/Name/Photo.jpg): "); 
+                        // Đổi câu nhắc để rõ ràng hơn
+                        printf("Destination (e.g., 'grouptest3' or 'grouptest3/docs'): "); 
+                        fgets(destination, 128, stdin); trim_newline(destination);
+                        
+                        printf("File Path: "); 
                         fgets(path, 256, stdin); trim_newline(path);
                         
-                        req_upload(sock, group, path);
+                        req_upload(sock, destination, path);
                     }
                     break;
 

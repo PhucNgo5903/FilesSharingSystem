@@ -53,19 +53,22 @@ int handle_mkgrp_logic(const char *group_name, const char *creator_name) {
 // Return: 1 (Có), 0 (Không)
 int check_user_in_group(const char *username, const char *group_name) {
     FILE *f = fopen(GROUP_FILE, "r");
-    if (!f) return 0; // Không có file dữ liệu
+    if (!f) return 0;
 
-    char line[4096]; // Buffer lớn để chứa danh sách thành viên dài
+    char line[4096];
     int found = 0;
 
     while (fgets(line, sizeof(line), f)) {
-        // Xóa ký tự xuống dòng ở cuối nếu có
-        line[strcspn(line, "\n")] = 0;
+        // --- XỬ LÝ KỸ KÝ TỰ XUỐNG DÒNG (FIX LỖI WSL/WINDOWS) ---
+        size_t len = strlen(line);
+        while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r')) {
+            line[len-1] = '\0';
+            len--;
+        }
+        // -------------------------------------------------------
 
-        // Tách token đầu tiên (Tên nhóm)
         char *token = strtok(line, " ");
         if (token != NULL && strcmp(token, group_name) == 0) {
-            // Nhóm trùng khớp, duyệt tiếp các token sau (các thành viên)
             while ((token = strtok(NULL, " ")) != NULL) {
                 if (strcmp(token, username) == 0) {
                     found = 1;

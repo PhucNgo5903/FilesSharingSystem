@@ -17,8 +17,7 @@
 #include "group_mgr.h"
 
 // Prototype declarations for transfer.c functions
-// Updated to accept client_name for logging
-void handle_upload(int client_sock, char *group_name, char *filename, long filesize, char *client_name);
+void handle_upload(int client_sock, char *destination, char *filename, long filesize, char *client_name);
 void handle_download(int client_sock, char *group_name, char *filename, char *client_name);
 
 #define PORT 5555
@@ -45,6 +44,15 @@ void sigchld_handler(int sig) {
     while (waitpid(-1, NULL, WNOHANG) > 0);
 }
 
+// --- HELPER: TRIM STRING (Fix lỗi \r trên Windows/WSL) ---
+void trim_str(char *str) {
+    int n = strlen(str);
+    while (n > 0 && (str[n-1] == '\n' || str[n-1] == '\r')) {
+        str[n-1] = '\0';
+        n--;
+    }
+}
+
 // --- CLIENT HANDLER LOGIC (CHILD PROCESS) ---
 void handle_client(int client_sock) {
     char buffer[1024];
@@ -63,6 +71,9 @@ void handle_client(int client_sock) {
 
         if (n <= 0) break; // Client disconnected
 
+        // --- QUAN TRỌNG: Làm sạch buffer ngay khi nhận ---
+        trim_str(buffer);
+
         // 2. Parse Command
         char cmd[32], arg1[128], arg2[256], arg3[128], arg4[128];
         memset(cmd, 0, 32); memset(arg1, 0, 128); memset(arg2, 0, 256); 
@@ -70,6 +81,9 @@ void handle_client(int client_sock) {
         
         // Scan up to 5 arguments
         sscanf(buffer, "%s %s %s %s %s", cmd, arg1, arg2, arg3, arg4);
+
+        // Làm sạch các đối số sau khi parse để chắc chắn không còn rác
+        trim_str(cmd); trim_str(arg1); trim_str(arg2); trim_str(arg3);
 
         // 3. Command Routing
 
@@ -141,6 +155,7 @@ void handle_client(int client_sock) {
 
         // --- FILE TRANSFER ---
         else if (strcmp(cmd, "UPLOAD") == 0) {
+            // UPLOAD <filename> <destination> <filesize>
             server_log_main(client_name, "RECV", "%s", buffer);
 
             if (!is_logged_in) {
@@ -149,27 +164,40 @@ void handle_client(int client_sock) {
                 continue;
             }
 
+            char *filename = arg1; // Filename
+            // Xử lý bỏ ngoặc kép nếu có
+            if (filename[0] == '"') {
+                filename++;
+                if (filename[strlen(filename)-1] == '"') filename[strlen(filename)-1] = 0;
+            }
+
+            char *destination = arg2; // Group/Folder
+            long filesize = atol(arg3);
+
+            // Tách lấy Group Name từ destination (VD: "groupA/folder" -> "groupA")
+            char group_name[64];
+            char temp_dest[256];
+            strcpy(temp_dest, destination);
+            char *token = strtok(temp_dest, "/");
+            if (token != NULL) {
+                strcpy(group_name, token);
+            } else {
+                strcpy(group_name, destination);
+            }
+
             // CHECK QUYỀN: User có trong Group không?
-            if (!check_user_in_group(client_name, arg1)) {
-                // arg1 là group_name
+            if (!check_user_in_group(client_name, group_name)) {
                 send(client_sock, "UPLOAD ERR_NO_PERMISSION\n", 25, 0);
                 server_log_main(client_name, "SEND", "UPLOAD ERR_NO_PERMISSION");
                 continue;
             }
 
-            char *filename = arg2;
-            if (filename[0] == '"') {
-                filename++;
-                if (filename[strlen(filename)-1] == '"') filename[strlen(filename)-1] = 0;
-            }
-            long filesize = atol(arg3);
-            
-            handle_upload(client_sock, arg1, filename, filesize, client_name);
+            // Gọi hàm xử lý upload
+            handle_upload(client_sock, destination, filename, filesize, client_name);
         } 
         else if (strcmp(cmd, "DOWNLOAD") == 0) {
             // DOWNLOAD <group> <file>
             char *filename = arg2;
-            // Xử lý bỏ dấu ngoặc kép ở tên file nếu có
             if (filename[0] == '"') {
                 filename++;
                 if (filename[strlen(filename)-1] == '"') filename[strlen(filename)-1] = 0;
@@ -183,21 +211,16 @@ void handle_client(int client_sock) {
                 continue;
             }
 
-            // 2. CHECK QUYỀN: User có trong Group không? (Logic mới bổ sung)
-            // arg1 chính là tên nhóm
+            // 2. CHECK QUYỀN: User có trong Group không?
+            // arg1 ở đây là tên nhóm (theo logic client gửi)
             if (!check_user_in_group(client_name, arg1)) {
-                // Log nhận lệnh nhưng báo thất bại kiểm tra quyền
                 server_log_main(client_name, "RECV", "DOWNLOAD %s \"%s\" (Check Permission)", arg1, filename);
-                
-                // Gửi lỗi về Client
                 send(client_sock, "DOWNLOAD ERR_NO_PERMISSION\n", 27, 0);
-                
-                // Log gửi lỗi
                 server_log_main(client_name, "SEND", "DOWNLOAD ERR_NO_PERMISSION (User not in group)");
                 continue;
             }
 
-            // 3. Tính toán kích thước file để in log đẹp
+            // 3. Tính toán kích thước file
             long filesize = 0;
             char filepath[512];
             sprintf(filepath, "storage/%s/%s", arg1, filename);
@@ -208,10 +231,10 @@ void handle_client(int client_sock) {
                 fclose(f_check);
             }
 
-            // 4. Log lệnh hợp lệ (kèm filesize)
+            // 4. Log lệnh hợp lệ
             server_log_main(client_name, "RECV", "DOWNLOAD %s \"%s\" %ld", arg1, filename, filesize);
             
-            // 5. Chuyển sang module transfer để xử lý gửi file
+            // 5. Chuyển sang module transfer
             handle_download(client_sock, arg1, filename, client_name);
         }
         else {
