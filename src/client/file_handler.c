@@ -68,13 +68,13 @@ void req_upload(int sock, char *destination, char *path) {
 }
 
 // Xử lý Download File
-void req_download(int sock, char *group_name, char *filename, char *dest_folder) {
-    // 1. Gửi lệnh DOWNLOAD
+void req_download(int sock, char *server_path, char *local_destination) {
+    // 1. Gửi lệnh: DOWNLOAD <server_path>
     char cmd[1024];
-    sprintf(cmd, "DOWNLOAD %s \"%s\"\n", group_name, filename);
+    sprintf(cmd, "DOWNLOAD \"%s\"\n", server_path);
     send(sock, cmd, strlen(cmd), 0);
 
-    // 2. Nhận phản hồi OK <size>
+    // 2. Nhận phản hồi
     char response[1024];
     int len = recv(sock, response, 1023, 0);
     if (len <= 0) return;
@@ -84,38 +84,51 @@ void req_download(int sock, char *group_name, char *filename, char *dest_folder)
     if (strncmp(response, "DOWNLOAD 200", 12) == 0) {
         sscanf(response, "DOWNLOAD 200 %ld", &filesize);
     } else {
-        // Thêm check lỗi quyền
         if (strstr(response, "ERR_NO_PERMISSION")) {
-            printf("[Client] Error: You are not a member of this group.\n");
+            printf("[Client] Error: You do not have permission for this group/file.\n");
+        } else if (strstr(response, "FILE_NOT_FOUND")) {
+            printf("[Client] Error: File not found on server.\n");
         } else {
             printf("[Client] Download failed: %s", response);
         }
         return;
     }
 
-    // --- SỬA LOG 1: In thông báo ngắn gọn ---
     printf("READY_DOWNLOAD OK\n");
-    // ----------------------------------------
 
-    // 3. Tạo file
+    // 3. Xác định đường dẫn lưu file cục bộ
+    // Nếu local_destination là thư mục (kết thúc bằng /) -> ghép tên file gốc vào
+    // Nếu local_destination là file -> dùng luôn
     char savepath[512];
-    if (dest_folder[strlen(dest_folder) - 1] == '/') {
-        sprintf(savepath, "%s%s", dest_folder, filename);
+    struct stat st = {0};
+
+    // Kiểm tra xem local_destination có phải là thư mục tồn tại không
+    if (stat(local_destination, &st) != -1 && S_ISDIR(st.st_mode)) {
+        // Tách tên file từ server_path (VD: "group/docs/file.txt" -> "file.txt")
+        char *filename = strrchr(server_path, '/');
+        if (filename) filename++; else filename = server_path;
+        
+        // Ghép đường dẫn: local_dest + / + filename
+        if (local_destination[strlen(local_destination)-1] == '/')
+             sprintf(savepath, "%s%s", local_destination, filename);
+        else
+             sprintf(savepath, "%s/%s", local_destination, filename);
     } else {
-        sprintf(savepath, "%s/%s", dest_folder, filename);
+        // Coi như người dùng nhập đường dẫn file đầy đủ
+        strcpy(savepath, local_destination);
     }
 
     FILE *fp = fopen(savepath, "wb");
     if (!fp) {
-        printf("[Client] Error: Cannot create file at %s.\n", savepath);
-        return;
+        printf("[Client] Error: Cannot create file at %s. Check path or permission.\n", savepath);
+        // Vẫn phải đọc hết dữ liệu rác từ server để tránh lỗi protocol
+        // (Tuy nhiên trong demo đơn giản có thể return luôn, nhưng tốt nhất là drain socket)
+        return; 
     }
     
-    // Tính tổng số chunk
+    // 4. Nhận chunk
     long total_chunks = (filesize + BUFFER_SIZE - 1) / BUFFER_SIZE;
     if (total_chunks == 0) total_chunks = 1;
-
-    // 4. Vòng lặp nhận chunk
     char buffer[BUFFER_SIZE];
     int chunk_len;
     int chunk_count = 0;
@@ -123,15 +136,10 @@ void req_download(int sock, char *group_name, char *filename, char *dest_folder)
     while ((chunk_len = recv_chunk(sock, buffer)) > 0) {
         fwrite(buffer, 1, chunk_len, fp);
         chunk_count++;
-
-        // --- SỬA LOG 2: In Chunk X/Y downloaded ---
         printf("Chunk %d/%ld downloaded\n", chunk_count, total_chunks);
-        // ------------------------------------------
     }
 
     fclose(fp);
-
-    // --- SỬA LOG 3: In DONE ngắn gọn ---
     printf("DONE_DOWNLOAD OK\n");
-    // -----------------------------------
+    printf("[Client] File saved to: %s\n", savepath);
 }

@@ -1,2 +1,4 @@
 grouptest4 phuctest4
 testgroup5 phuctest5
+group6 phuctest6 phuctest5
+groupA phuc

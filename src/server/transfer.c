@@ -40,8 +40,8 @@ void handle_upload(int client_sock, char *destination, char *filename, long file
     // ---------------------------------------------
 
     // 3. Tạo đường dẫn file
-    char filepath[512];
-    sprintf(filepath, "%s/%s", folder_path, filename);
+    char filepath[1024]; // Tăng lên 1024 cho an toàn
+    snprintf(filepath, sizeof(filepath), "%s/%s", folder_path, filename); // Dùng snprintf an toàn hơn sprintf
 
     FILE *fp = fopen(filepath, "wb");
     if (!fp) {
@@ -81,22 +81,23 @@ void handle_upload(int client_sock, char *destination, char *filename, long file
 }
 
 // Hàm handle_download giữ nguyên...
-void handle_download(int client_sock, char *group_name, char *filename, char *client_name) {
-    // ... (Giữ nguyên code phần download của bạn) ...
+void handle_download(int client_sock, char *server_path, char *client_name) {
     char filepath[512];
-    sprintf(filepath, "storage/%s/%s", group_name, filename);
+    sprintf(filepath, "storage/%s", server_path);
 
     FILE *fp = fopen(filepath, "rb");
     if (!fp) {
+        // Phòng hờ, dù main.c đã check rồi
         transfer_log(client_name, "SEND", "FILE_NOT_FOUND 404");
         send(client_sock, "FILE_NOT_FOUND 404\n", 19, 0);
         return;
     }
-    // ... (Phần còn lại giữ nguyên)
+
     fseek(fp, 0, SEEK_END);
     long filesize = ftell(fp);
     rewind(fp);
 
+    // Gửi thông tin file
     char response[256];
     sprintf(response, "DOWNLOAD 200 %ld 0\n", filesize);
     send(client_sock, response, strlen(response), 0);
@@ -104,20 +105,26 @@ void handle_download(int client_sock, char *group_name, char *filename, char *cl
 
     long total_chunks = (filesize + BUFFER_SIZE - 1) / BUFFER_SIZE;
     if (total_chunks == 0) total_chunks = 1;
+
     char buffer[BUFFER_SIZE];
     int bytes_read;
     int chunk_count = 0;
+
     while ((bytes_read = fread(buffer, 1, BUFFER_SIZE, fp)) > 0) {
         send_chunk(client_sock, buffer, bytes_read);
         chunk_count++;
+        
         char *b64 = base64_encode((unsigned char*)buffer, bytes_read);
         if (b64) {
+            // Log server_path cho gọn
             transfer_log(client_name, "SEND", "DOWNLOAD %ld %d/%ld \"%s\" %s", 
-                         filesize, chunk_count, total_chunks, filename, b64);
+                         filesize, chunk_count, total_chunks, server_path, b64);
             free(b64);
         }
     }
+
     send_chunk(client_sock, NULL, 0);
     fclose(fp);
+
     transfer_log(client_name, "SEND", "DONE-DOWNLOAD OK");
 }

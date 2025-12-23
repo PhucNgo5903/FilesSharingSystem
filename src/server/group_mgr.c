@@ -4,20 +4,57 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <unistd.h> // Cần cho hàm unlink, rename, mkstemp
+#include <fcntl.h>  // Cần cho fdopen
 
 #define GROUP_FILE "data/groups.txt"
+#define REQ_DIR    "data/requests"
+#define INV_DIR    "data/invites"
+#define GRP_INV_DIR "data/group_invites"
 #define STORAGE_DIR "storage"
 
-// Hàm tạo nhóm: Lưu người tạo làm nhóm trưởng (đứng đầu)
+#define MAX_LINE 4096
+
+// --- Helper: Cắt ký tự xuống dòng (Fix lỗi Windows/WSL) ---
+static void trim_line(char *str) {
+    size_t len = strlen(str);
+    while (len > 0 && (str[len-1] == '\n' || str[len-1] == '\r')) {
+        str[len-1] = '\0';
+        len--;
+    }
+}
+
+// --- Helper: Tạo thư mục dữ liệu ---
+void ensure_group_dirs() {
+    // Tạo thư mục data nếu chưa có
+    #ifdef _WIN32
+        mkdir("data");
+        mkdir(REQ_DIR);
+        mkdir(INV_DIR);
+        mkdir(GRP_INV_DIR);
+    #else
+        mkdir("data", 0777);
+        mkdir(REQ_DIR, 0777);
+        mkdir(INV_DIR, 0777);
+        mkdir(GRP_INV_DIR, 0777);
+    #endif
+}
+
+// ---------------------------------------------------------
+// PHẦN 1: CORE GROUP MANAGEMENT (MKGRP, CHECK, LIST)
+// ---------------------------------------------------------
+
 int handle_mkgrp_logic(const char *group_name, const char *creator_name) {
-    // 1. Kiểm tra nhóm đã tồn tại chưa
+    ensure_group_dirs();
+    
+    // 1. Kiểm tra tồn tại
     FILE *f = fopen(GROUP_FILE, "r");
-    char line[1024];
+    char line[MAX_LINE];
     char current_group[64];
     
     if (f) {
         while (fgets(line, sizeof(line), f)) {
-            // Lấy token đầu tiên là tên nhóm
+            trim_line(line);
             if (sscanf(line, "%s", current_group) == 1) {
                 if (strcmp(current_group, group_name) == 0) {
                     fclose(f);
@@ -28,13 +65,13 @@ int handle_mkgrp_logic(const char *group_name, const char *creator_name) {
         fclose(f);
     }
 
-    // 2. Ghi vào file: <tên nhóm> <người tạo>
+    // 2. Ghi vào file: group owner (chưa có member khác)
     f = fopen(GROUP_FILE, "a");
     if (f) {
         fprintf(f, "%s %s\n", group_name, creator_name);
         fclose(f);
     } else {
-        return 0; // Lỗi không mở được file
+        return 0;
     }
 
     // 3. Tạo thư mục vật lý
@@ -49,26 +86,24 @@ int handle_mkgrp_logic(const char *group_name, const char *creator_name) {
     return 1;
 }
 
-// Hàm kiểm tra: User có trong nhóm không?
-// Return: 1 (Có), 0 (Không)
+// Kiểm tra user có trong nhóm không (Dùng lại logic cũ của bạn)
 int check_user_in_group(const char *username, const char *group_name) {
     FILE *f = fopen(GROUP_FILE, "r");
     if (!f) return 0;
 
-    char line[4096];
+    char line[MAX_LINE];
     int found = 0;
 
     while (fgets(line, sizeof(line), f)) {
-        // --- XỬ LÝ KỸ KÝ TỰ XUỐNG DÒNG (FIX LỖI WSL/WINDOWS) ---
-        size_t len = strlen(line);
-        while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r')) {
-            line[len-1] = '\0';
-            len--;
-        }
-        // -------------------------------------------------------
+        trim_line(line); // Quan trọng: xóa \r\n
 
-        char *token = strtok(line, " ");
+        // Copy dòng để strtok không làm hỏng logic
+        char temp[MAX_LINE];
+        strcpy(temp, line);
+
+        char *token = strtok(temp, " ");
         if (token != NULL && strcmp(token, group_name) == 0) {
+            // Nhóm khớp, tìm user trong các token tiếp theo
             while ((token = strtok(NULL, " ")) != NULL) {
                 if (strcmp(token, username) == 0) {
                     found = 1;
@@ -82,7 +117,7 @@ int check_user_in_group(const char *username, const char *group_name) {
     return found;
 }
 
-// Hàm liệt kê nhóm (Giữ nguyên hoặc sửa chút để chỉ hiện tên nhóm)
+// Lấy danh sách nhóm (LSGRP)
 void get_group_list_string(char *buffer, int size) {
     FILE *f = fopen(GROUP_FILE, "r");
     if (!f) {
@@ -90,16 +125,490 @@ void get_group_list_string(char *buffer, int size) {
         return;
     }
     
-    char line[4096];
+    char line[MAX_LINE];
     char gname[64];
     
-    strcpy(buffer, "LSGRP_RESULT");
-    
+    strcpy(buffer, "LSGRP OK");
     while (fgets(line, sizeof(line), f)) {
-        // Chỉ lấy token đầu tiên (tên nhóm) để hiển thị
+        trim_line(line);
         if (sscanf(line, "%s", gname) == 1) {
             strcat(buffer, " ");
             strcat(buffer, gname);
+        }
+    }
+    strcat(buffer, "\n");
+    fclose(f);
+}
+
+// Kiểm tra chủ nhóm (người đứng thứ 2 trong dòng: group owner mem1...)
+int is_group_owner(const char *group_name, const char *user) {
+    FILE *f = fopen(GROUP_FILE, "r");
+    if (!f) return 0;
+
+    char line[MAX_LINE];
+    char gname[64], owner[64];
+    int found = 0;
+
+    while (fgets(line, sizeof(line), f)) {
+        trim_line(line);
+        // Đọc 2 token đầu tiên: Tên nhóm và Owner
+        if (sscanf(line, "%s %s", gname, owner) == 2) {
+            if (strcmp(gname, group_name) == 0) {
+                if (strcmp(owner, user) == 0) found = 1;
+                break;
+            }
+        }
+    }
+    fclose(f);
+    return found;
+}
+
+// ---------------------------------------------------------
+// PHẦN 2: ADVANCED MEMBER MANAGEMENT (ADD/REMOVE)
+// ---------------------------------------------------------
+
+// Thêm user vào nhóm (Chỉnh sửa file groups.txt)
+int add_member_to_group(const char *group_name, const char *user) {
+    if (check_user_in_group(user, group_name)) return 1; // Đã có rồi thì coi như thành công
+
+    FILE *f = fopen(GROUP_FILE, "r");
+    if (!f) return 0;
+
+    // Tạo file tạm
+    char tmp_filename[] = "data/groups_tmp_XXXXXX";
+    int fd = mkstemp(tmp_filename); // Tạo file tạm an toàn
+    if (fd == -1) { fclose(f); return 0; }
+    
+    FILE *ftmp = fdopen(fd, "w");
+    
+    char line[MAX_LINE];
+    int found = 0;
+
+    while (fgets(line, sizeof(line), f)) {
+        trim_line(line);
+        
+        char gname[64];
+        sscanf(line, "%s", gname);
+
+        if (strcmp(gname, group_name) == 0) {
+            // Đây là nhóm cần thêm -> Ghi thêm user vào cuối dòng
+            fprintf(ftmp, "%s %s\n", line, user);
+            found = 1;
+        } else {
+            // Nhóm khác -> Ghi lại y nguyên
+            fprintf(ftmp, "%s\n", line);
+        }
+    }
+
+    fclose(f);
+    fclose(ftmp);
+
+    if (found) {
+        remove(GROUP_FILE); // Xóa file cũ
+        rename(tmp_filename, GROUP_FILE); // Đổi tên file tạm thành file chính
+        return 1;
+    } else {
+        remove(tmp_filename); // Không tìm thấy nhóm, xóa file tạm
+        return 0;
+    }
+}
+
+// Xóa user khỏi nhóm (Phức tạp: Phải parse lại dòng để loại bỏ user)
+int remove_member_from_group(const char *group_name, const char *user) {
+    // Không cho xóa owner
+    if (is_group_owner(group_name, user)) return 0;
+
+    FILE *f = fopen(GROUP_FILE, "r");
+    if (!f) return 0;
+
+    char tmp_filename[] = "data/groups_rm_XXXXXX";
+    int fd = mkstemp(tmp_filename);
+    if (fd == -1) { fclose(f); return 0; }
+    FILE *ftmp = fdopen(fd, "w");
+
+    char line[MAX_LINE];
+    int found_grp = 0;
+
+    while (fgets(line, sizeof(line), f)) {
+        trim_line(line);
+        
+        char buffer_copy[MAX_LINE];
+        strcpy(buffer_copy, line); // Copy để strtok
+
+        char *token = strtok(buffer_copy, " "); // Token đầu tiên là tên nhóm
+        
+        if (token != NULL && strcmp(token, group_name) == 0) {
+            found_grp = 1;
+            // Ghi lại tên nhóm trước
+            fprintf(ftmp, "%s", token);
+
+            // Duyệt các thành viên
+            while ((token = strtok(NULL, " ")) != NULL) {
+                // Nếu token KHÁC user cần xóa thì ghi lại vào file
+                if (strcmp(token, user) != 0) {
+                    fprintf(ftmp, " %s", token);
+                }
+            }
+            fprintf(ftmp, "\n"); // Xuống dòng khi xong nhóm này
+        } else {
+            // Nhóm khác, ghi lại y nguyên
+            fprintf(ftmp, "%s\n", line);
+        }
+    }
+
+    fclose(f);
+    fclose(ftmp);
+
+    if (found_grp) {
+        remove(GROUP_FILE);
+        rename(tmp_filename, GROUP_FILE);
+        return 1;
+    } else {
+        remove(tmp_filename);
+        return 0;
+    }
+}
+
+// Lấy danh sách thành viên (LSMEM)
+void get_group_members_string(const char *group_name, char *buffer, int size) {
+    FILE *f = fopen(GROUP_FILE, "r");
+    if (!f) {
+        snprintf(buffer, size, "LSMEM ERR_INTERNAL");
+        return;
+    }
+
+    char line[MAX_LINE];
+    int found = 0;
+
+    while (fgets(line, sizeof(line), f)) {
+        trim_line(line);
+        char temp[MAX_LINE];
+        strcpy(temp, line);
+
+        char *token = strtok(temp, " ");
+        if (token != NULL && strcmp(token, group_name) == 0) {
+            // Found group
+            strcpy(buffer, "LSMEM OK ");
+            
+            // Bỏ qua tên nhóm, lấy token tiếp theo (owner)
+            token = strtok(NULL, " "); 
+            if (token) {
+                strcat(buffer, token);
+            }
+
+            // Lấy các members còn lại
+            while ((token = strtok(NULL, " ")) != NULL) {
+                strcat(buffer, " ");
+                strcat(buffer, token);
+            }
+            strcat(buffer, "\n");
+            found = 1;
+            break;
+        }
+    }
+    fclose(f);
+
+    if (!found) {
+        snprintf(buffer, size, "LSMEM ERR_NOT_FOUND\n");
+    }
+}
+
+// ---------------------------------------------------------
+// PHẦN 3: REQUEST & INVITE SYSTEM
+// (Sử dụng file riêng trong thư mục requests/ và invites/)
+// ---------------------------------------------------------
+
+// --- REQUESTS ---
+// File: data/requests/<group_name>.req (Mỗi dòng 1 username)
+
+int add_join_request(const char *group_name, const char *user) {
+    ensure_group_dirs();
+    char path[256];
+    sprintf(path, "%s/%s.req", REQ_DIR, group_name);
+
+    // Kiểm tra trùng lặp
+    FILE *fr = fopen(path, "r");
+    if (fr) {
+        char line[64];
+        while (fgets(line, sizeof(line), fr)) {
+            trim_line(line);
+            if (strcmp(line, user) == 0) { fclose(fr); return 1; } // Đã request rồi
+        }
+        fclose(fr);
+    }
+
+    FILE *f = fopen(path, "a");
+    if (!f) return 0;
+    fprintf(f, "%s\n", user);
+    fclose(f);
+    return 1;
+}
+
+void build_view_request_response(const char *group_name, char *buffer, int size) {
+    char path[256];
+    sprintf(path, "%s/%s.req", REQ_DIR, group_name);
+    
+    FILE *f = fopen(path, "r");
+    if (!f) {
+        snprintf(buffer, size, "VIEW_REQUEST OK\n"); // Không có request nào
+        return;
+    }
+
+    strcpy(buffer, "VIEW_REQUEST OK");
+    char user[64];
+    while (fgets(user, sizeof(user), f)) {
+        trim_line(user);
+        strcat(buffer, " ");
+        strcat(buffer, user);
+    }
+    strcat(buffer, "\n");
+    fclose(f);
+}
+
+// Duyệt Request: Thêm vào nhóm + Xóa khỏi file request
+int approve_join_request(const char *group_name, const char *user) {
+    // 1. Thêm vào nhóm
+    if (!add_member_to_group(group_name, user)) return 0;
+
+    // 2. Xóa khỏi file request (bằng cách ghi lại file req bỏ user đó)
+    char path[256];
+    sprintf(path, "%s/%s.req", REQ_DIR, group_name);
+    
+    FILE *f = fopen(path, "r");
+    if (!f) return 1; // File req không còn (kỳ lạ nhưng coi như xong)
+
+    char tmp_path[256];
+    sprintf(tmp_path, "%s/%s.req.tmp", REQ_DIR, group_name);
+    FILE *ftmp = fopen(tmp_path, "w");
+
+    char line[64];
+    while (fgets(line, sizeof(line), f)) {
+        trim_line(line);
+        if (strcmp(line, user) != 0) {
+            fprintf(ftmp, "%s\n", line);
+        }
+    }
+    fclose(f);
+    fclose(ftmp);
+    remove(path);
+    rename(tmp_path, path);
+    return 1;
+}
+
+// --- INVITES ---
+// File: data/invites/<username>.inv (Mỗi dòng 1 group_name)
+
+int add_invite(const char *user, const char *group_name) {
+    ensure_group_dirs();
+    
+    // 1. Ghi vào Inbox của User (để user biết mình được mời) -> data/invites/user.inv
+    char user_path[256];
+    sprintf(user_path, "%s/%s.inv", INV_DIR, user);
+
+    // Kiểm tra trùng trong inbox user
+    FILE *fr = fopen(user_path, "r");
+    if (fr) {
+        char line[64];
+        while (fgets(line, sizeof(line), fr)) {
+            trim_line(line);
+            if (strcmp(line, group_name) == 0) { fclose(fr); return 1; } // Đã có trong inbox
+        }
+        fclose(fr);
+    }
+
+    FILE *f = fopen(user_path, "a");
+    if (!f) return 0;
+    fprintf(f, "%s\n", group_name);
+    fclose(f);
+
+    // 2. [NEW] Ghi vào Lịch sử của Group (để chủ nhóm track status) -> data/group_invites/group.txt
+    char grp_path[256];
+    sprintf(grp_path, "%s/%s.txt", GRP_INV_DIR, group_name);
+    
+    // Kiểm tra xem đã từng mời user này chưa (để tránh ghi lặp trong lịch sử)
+    int already_logged = 0;
+    FILE *fg = fopen(grp_path, "r");
+    if (fg) {
+        char line[64];
+        while (fgets(line, sizeof(line), fg)) {
+            trim_line(line);
+            if (strcmp(line, user) == 0) { already_logged = 1; break; }
+        }
+        fclose(fg);
+    }
+
+    if (!already_logged) {
+        FILE *fg_append = fopen(grp_path, "a");
+        if (fg_append) {
+            fprintf(fg_append, "%s\n", user);
+            fclose(fg_append);
+        }
+    }
+
+    return 1;
+}
+
+void build_view_invite_response(const char *user, char *buffer, int size) {
+    char path[256];
+    sprintf(path, "%s/%s.inv", INV_DIR, user);
+
+    FILE *f = fopen(path, "r");
+    if (!f) {
+        snprintf(buffer, size, "VIEW_INVITE OK\n");
+        return;
+    }
+
+    strcpy(buffer, "VIEW_INVITE OK");
+    char gname[64];
+    while (fgets(gname, sizeof(gname), f)) {
+        trim_line(gname);
+        strcat(buffer, " ");
+        strcat(buffer, gname);
+    }
+    strcat(buffer, "\n");
+    fclose(f);
+}
+
+int accept_invite(const char *user, const char *group_name) {
+    // 1. Kiểm tra xem có invite không
+    char path[256];
+    sprintf(path, "%s/%s.inv", INV_DIR, user);
+    FILE *f = fopen(path, "r");
+    if (!f) return -1; // Không có invite nào
+
+    int found = 0;
+    char line[64];
+    while (fgets(line, sizeof(line), f)) {
+        trim_line(line);
+        if (strcmp(line, group_name) == 0) { found = 1; break; }
+    }
+    fclose(f);
+
+    if (!found) return -1; // Không tìm thấy lời mời cho nhóm này
+
+    // 2. Thêm vào nhóm
+    if (!add_member_to_group(group_name, user)) return 0;
+
+    // 3. Xóa invite
+    char tmp_path[256];
+    sprintf(tmp_path, "%s/%s.inv.tmp", INV_DIR, user);
+    
+    f = fopen(path, "r");
+    FILE *ftmp = fopen(tmp_path, "w");
+    
+    while (fgets(line, sizeof(line), f)) {
+        trim_line(line);
+        if (strcmp(line, group_name) != 0) {
+            fprintf(ftmp, "%s\n", line);
+        }
+    }
+    fclose(f);
+    fclose(ftmp);
+    remove(path);
+    rename(tmp_path, path);
+
+    return 1;
+}
+
+// ---------------------------------------------------------
+// PHẦN 4: STATUS CHECKING (NEW)
+// ---------------------------------------------------------
+
+// Kiểm tra trạng thái yêu cầu tham gia của chính mình
+// Return: 1 (Approved), 0 (Pending), -1 (None/Rejected)
+int check_join_req_status(const char *user, const char *group_name) {
+    if (check_user_in_group(user, group_name)) return 1; // Approved
+
+    char path[256];
+    sprintf(path, "%s/%s.req", REQ_DIR, group_name);
+    FILE *f = fopen(path, "r");
+    if (f) {
+        char line[64];
+        while (fgets(line, sizeof(line), f)) {
+            trim_line(line);
+            if (strcmp(line, user) == 0) { fclose(f); return 0; } // Pending
+        }
+        fclose(f);
+    }
+    return -1; // Rejected/None
+}
+
+// Kiểm tra trạng thái lời mời (Chỉ dành cho chủ nhóm check user khác)
+// Return: 1 (Accepted), 0 (Pending), -1 (None/Rejected)
+int check_invite_status(const char *group_name, const char *target_user) {
+    // 1. Kiểm tra target_user đã vào nhóm chưa (Accepted)
+    if (check_user_in_group(target_user, group_name)) {
+        return 1;
+    }
+
+    // 2. Kiểm tra lời mời có còn nằm trong file invite của user đó không (Pending)
+    ensure_group_dirs();
+    char path[256];
+    sprintf(path, "%s/%s.inv", INV_DIR, target_user);
+
+    FILE *f = fopen(path, "r");
+    if (f) {
+        char line[64];
+        while (fgets(line, sizeof(line), f)) {
+            trim_line(line);
+            if (strcmp(line, group_name) == 0) {
+                fclose(f);
+                return 0; // Pending
+            }
+        }
+        fclose(f);
+    }
+
+    return -1; // Không tìm thấy
+}
+
+// 2. Check INVITE_STATUS (Chủ nhóm check danh sách mời)
+// Logic: Đọc data/group_invites/<group>.txt -> Với mỗi user, check xem đang ở đâu
+void build_invite_status_all_response(const char *group_name, char *buffer, int size) {
+    char grp_path[256];
+    sprintf(grp_path, "%s/%s.txt", GRP_INV_DIR, group_name);
+
+    FILE *f = fopen(grp_path, "r");
+    if (!f) {
+        snprintf(buffer, size, "STATUS_LIST EMPTY");
+        return;
+    }
+
+    strcpy(buffer, "INVITE_STATUS OK ");
+    char user[64];
+    
+    while (fgets(user, sizeof(user), f)) {
+        trim_line(user);
+        if (strlen(user) == 0) continue;
+
+        const char *status = "UNKNOWN";
+
+        // Check 1: Đã là thành viên chưa?
+        if (check_user_in_group(user, group_name)) {
+            status = "ACCEPTED"; // Đã vào nhóm
+        } else {
+            // Check 2: Còn trong inbox của user đó không?
+            char user_inv_path[256];
+            sprintf(user_inv_path, "%s/%s.inv", INV_DIR, user);
+            FILE *fu = fopen(user_inv_path, "r");
+            int is_pending = 0;
+            if (fu) {
+                char g_line[64];
+                while(fgets(g_line, sizeof(g_line), fu)) {
+                    trim_line(g_line);
+                    if (strcmp(g_line, group_name) == 0) { is_pending = 1; break; }
+                }
+                fclose(fu);
+            }
+            
+            if (is_pending) status = "PENDING";
+            else status = "REJECTED"; // User đã xóa invite hoặc từ chối
+        }
+
+        char entry[128];
+        snprintf(entry, sizeof(entry), " %s:%s", user, status);
+        if (strlen(buffer) + strlen(entry) < size - 1) {
+            strcat(buffer, entry);
         }
     }
     strcat(buffer, "\n");
