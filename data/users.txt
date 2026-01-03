@@ -6,3 +6,8 @@ phuctest5 phuctest5
 phuctest6 phuctest6
 phuc phuc
 tung tung
+phuc1 phuc1
+tung1 tung1
+joey joey
+chandler chandler
+ross ross
