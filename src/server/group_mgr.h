@@ -19,6 +19,7 @@ int add_member_to_group(const char *group_name, const char *user);
 int add_join_request(const char *group_name, const char *user);
 void build_view_request_response(const char *group_name, char *buffer, int size);
 int approve_join_request(const char *group_name, const char *user); // Wrapper: Add member + Rm req
+void build_join_req_status_all_response(const char *user, char *buffer, int size);
 
 // Invite Logic
 int add_invite(const char *user, const char *group_name);

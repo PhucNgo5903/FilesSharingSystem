@@ -6,6 +6,7 @@
 #include <sys/types.h>
 #include <unistd.h> // Cần cho hàm unlink, rename, mkstemp
 #include <fcntl.h>  // Cần cho fdopen
+#include <dirent.h>
 
 #define GROUP_FILE "data/groups.txt"
 #define REQ_DIR    "data/requests"
@@ -38,6 +39,22 @@ void ensure_group_dirs() {
         mkdir(INV_DIR, 0777);
         mkdir(GRP_INV_DIR, 0777);
     #endif
+}
+
+int check_user_in_req_file(const char *path, const char *user) {
+    FILE *f = fopen(path, "r");
+    if (!f) return 0;
+    char line[64];
+    int found = 0;
+    while (fgets(line, sizeof(line), f)) {
+        trim_line(line);
+        if (strcmp(line, user) == 0) {
+            found = 1;
+            break;
+        }
+    }
+    fclose(f);
+    return found;
 }
 
 // ---------------------------------------------------------
@@ -363,6 +380,79 @@ void build_view_request_response(const char *group_name, char *buffer, int size)
     }
     strcat(buffer, "\n");
     fclose(f);
+}
+
+void build_join_req_status_all_response(const char *user, char *buffer, int size) {
+    strcpy(buffer, "JOIN_REQ_STATUS OK");
+    int has_data = 0;
+
+    // 1. Quét file groups.txt để tìm trạng thái MEMBER/APPROVED
+    FILE *fg = fopen(GROUP_FILE, "r");
+    if (fg) {
+        char line[MAX_LINE];
+        while (fgets(line, sizeof(line), fg)) {
+            trim_line(line);
+            
+            // Parse: groupname owner member1 member2 ...
+            char group_name[64];
+            char temp_line[MAX_LINE];
+            strcpy(temp_line, line);
+            
+            char *token = strtok(temp_line, " ");
+            if (token) {
+                strcpy(group_name, token); // Lấy tên nhóm
+                
+                // Quét các token còn lại xem có user không
+                int is_member = 0;
+                while ((token = strtok(NULL, " ")) != NULL) {
+                    if (strcmp(token, user) == 0) {
+                        is_member = 1;
+                        break;
+                    }
+                }
+
+                if (is_member) {
+                    char entry[128];
+                    snprintf(entry, sizeof(entry), " %s:MEMBER", group_name);
+                    if (strlen(buffer) + strlen(entry) < size - 1) strcat(buffer, entry);
+                    has_data = 1;
+                }
+            }
+        }
+        fclose(fg);
+    }
+
+    // 2. Quét thư mục data/requests/ để tìm trạng thái PENDING
+    DIR *d = opendir(REQ_DIR);
+    if (d) {
+        struct dirent *dir;
+        while ((dir = readdir(d)) != NULL) {
+            // Chỉ xét file có đuôi .req
+            if (strstr(dir->d_name, ".req")) {
+                char req_path[512];
+                snprintf(req_path, sizeof(req_path), "%s/%s", REQ_DIR, dir->d_name);
+                
+                if (check_user_in_req_file(req_path, user)) {
+                    // Lấy tên nhóm từ tên file (bỏ đuôi .req)
+                    char group_name[64];
+                    strncpy(group_name, dir->d_name, sizeof(group_name));
+                    char *dot = strstr(group_name, ".req");
+                    if (dot) *dot = '\0';
+
+                    char entry[128];
+                    snprintf(entry, sizeof(entry), " %s:PENDING", group_name);
+                    if (strlen(buffer) + strlen(entry) < size - 1) strcat(buffer, entry);
+                    has_data = 1;
+                }
+            }
+        }
+        closedir(d);
+    }
+
+    if (!has_data) {
+        strcat(buffer, " EMPTY");
+    }
+    strcat(buffer, "\n");
 }
 
 // Duyệt Request: Thêm vào nhóm + Xóa khỏi file request

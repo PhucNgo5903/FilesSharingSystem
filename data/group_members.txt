@@ -1,4 +1,0 @@
-coffee_lovers phuc
-coffee_lovers tung
-coffee_lovers nhi
-study_group tung

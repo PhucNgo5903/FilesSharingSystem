@@ -233,9 +233,18 @@ void handle_accept_invite(int sock) {
     char resp[BUF_SIZE];
     if (recv_line(sock, resp, sizeof(resp)) <= 0) return;
 
-    if (strncmp(resp, "ACCEPT_INVITE OK", 17) == 0) printf("You have joined group '%s'.\n", gname);
-    else if (strncmp(resp, "ACCEPT_INVITE ERR_INVITE_NOT_FOUND", 34) == 0) printf("Error: No invite found for this group.\n");
-    else printf("Server: %s", resp);
+    if (strncmp(resp, "ACCEPT_INVITE OK", 16) == 0) {
+        printf("Success: You have successfully joined group '%s'.\n", gname);
+    } 
+    else if (strncmp(resp, "ACCEPT_INVITE ERR_INVITE_NOT_FOUND", 34) == 0) {
+        printf("Error: You do not have an invitation for group '%s'.\n", gname);
+    }
+    else if (strncmp(resp, "ACCEPT_INVITE ERR_NOT_FOUND", 27) == 0) {
+        printf("Error: Group '%s' does not exist.\n", gname);
+    }
+    else {
+        printf("Server Error: %s", resp);
+    }
 }
 
 // ============================================================
@@ -424,25 +433,49 @@ void handle_rmfile(int sock) {
 }
 
 void handle_join_req_status(int sock) {
-    char gname[MAX_NAME];
-    input_text("Enter the group name you requested to join: ", gname, sizeof(gname));
-    if (!gname[0]) return;
+    printf("--> Checking your request status for all groups...\n");
 
     char req[BUF_SIZE];
-    snprintf(req, sizeof(req), "JOIN_REQ_STATUS %s\n", gname);
+    snprintf(req, sizeof(req), "JOIN_REQ_STATUS\n");
     send(sock, req, strlen(req), 0);
 
-    char resp[BUF_SIZE];
+    char resp[4096];
     if (recv_line(sock, resp, sizeof(resp)) <= 0) return;
 
-    if (strncmp(resp, "STATUS APPROVED", 15) == 0) 
-        printf("You ARE NOW A MEMBER of group '%s'.\n", gname);
-    else if (strncmp(resp, "STATUS PENDING", 14) == 0) 
-        printf("Your request is still PENDING.\n");
-    else if (strncmp(resp, "STATUS REJECTED", 15) == 0) 
-        printf("Your request was REJECTED (or not found).\n");
-    else 
-        printf("Server: %s", resp);
+    // --- SỬA ĐOẠN NÀY ---
+    // Cập nhật header mới: "JOIN_REQ_STATUS OK" (độ dài 18 ký tự)
+    if (strncmp(resp, "JOIN_REQ_STATUS OK", 18) == 0) {
+        char *p = resp + 18; // Nhảy qua chuỗi "JOIN_REQ_STATUS OK"
+        
+        if (strncmp(p, " EMPTY", 6) == 0 || *p == '\0' || *p == '\n') {
+            printf("--> You have not joined or requested to join any group yet.\n");
+        } else {
+            printf("\n--- YOUR GROUP STATUS ---\n");
+            printf("%-20s | %-15s\n", "Group Name", "Status");
+            printf("---------------------+----------------\n");
+            
+            // Parse nội dung: " group1:MEMBER group2:PENDING"
+            char *token = strtok(p, " \n");
+            while (token != NULL) {
+                char *colon = strchr(token, ':');
+                if (colon) {
+                    *colon = '\0';
+                    char *gname = token;
+                    char *status = colon + 1;
+                    
+                    printf("%-20s | %s\n", gname, status);
+                }
+                token = strtok(NULL, " \n");
+            }
+            printf("--------------------------------------\n");
+        }
+    } 
+    else if (strncmp(resp, "STATUS ERR_NOT_LOGIN", 20) == 0) {
+        printf("Error: You are not logged in.\n");
+    }
+    else {
+        printf("Server Response: %s", resp);
+    }
 }
 
 // Kiểm tra danh sách mời của nhóm (Chỉ chủ nhóm)
@@ -458,10 +491,10 @@ void handle_invite_status(int sock) {
     char resp[4096]; // Buffer lớn cho danh sách
     if (recv_line(sock, resp, sizeof(resp)) <= 0) return;
 
-    if (strncmp(resp, "STATUS_LIST", 11) == 0) {
-        char *p = resp + 11; 
+    if (strncmp(resp, "INVITE_STATUS OK", 16) == 0) {
+        char *p = resp + 16; 
         if (strncmp(p, " EMPTY", 6) == 0) {
-            printf("--> This group has not invited anyone yet.\n");
+            printf("This group has not invited anyone yet.\n");
         } else {
             printf("\n--- INVITE HISTORY ---\n");
             printf("%-20s | %-15s\n", "User", "Status");

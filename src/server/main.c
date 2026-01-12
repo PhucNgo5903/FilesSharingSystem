@@ -567,17 +567,12 @@ void handle_client(int client_sock) {
                 continue; 
             }
 
-            int status = check_join_req_status(client_name, arg1);
-            if (status == 1) {
-                send(client_sock, "STATUS APPROVED\n", 16, 0);
-                server_log_main(client_name, "SEND", "JOIN_REQ_STATUS OK ");
-            } else if (status == 0) {
-                send(client_sock, "STATUS PENDING\n", 15, 0);
-                server_log_main(client_name, "SEND", "JOIN_REQ_STATUS OK ");
-            } else {
-                send(client_sock, "STATUS REJECTED\n", 16, 0);
-                server_log_main(client_name, "SEND", "JOIN_REQ_STATUS OK");
-            }
+            // Gọi hàm mới xử lý danh sách
+            char resp[4096];
+            build_join_req_status_all_response(client_name, resp, sizeof(resp));
+            
+            send(client_sock, resp, strlen(resp), 0);
+            server_log_main(client_name, "SEND", "%s", resp); // Log danh sách trả về
         }
 
         else if (strcmp(cmd, "INVITE_STATUS") == 0) {
