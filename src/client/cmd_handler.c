@@ -57,8 +57,8 @@ static void input_text(const char *prompt, char *buf, size_t sz) {
 
 void handle_lsmem(int sock) {
     char gname[MAX_NAME];
-    input_text("Nhập tên nhóm cần xem thành viên: ", gname, sizeof(gname));
-    if (!gname[0]) { printf("Tên nhóm không được rỗng.\n"); return; }
+    input_text("Enter the group name to view members: ", gname, sizeof(gname));
+    if (!gname[0]) { printf("Group name cannot be empty.\n"); return; }
 
     char req[BUF_SIZE];
     snprintf(req, sizeof(req), "LSMEM %s\n", gname);
@@ -68,13 +68,13 @@ void handle_lsmem(int sock) {
     if (recv_line(sock, resp, sizeof(resp)) <= 0) return;
 
     if (strncmp(resp, "LSMEM ERR_NOT_LOGIN", 19) == 0) {
-        printf("Lỗi: Bạn chưa đăng nhập.\n");
+        printf("Error: You are not logged in.\n");
     } else if (strncmp(resp, "LSMEM ERR_NOT_FOUND", 19) == 0) {
-        printf("Lỗi: Nhóm không tồn tại.\n");
+        printf("Error: Group not found.\n");
     } else if (strncmp(resp, "LSMEM OK", 8) == 0) {
         char *p = resp + 8;
         while (*p == ' ') p++;
-        printf("Thành viên trong nhóm '%s': %s", gname, p); // Server gửi kèm \n
+        printf("Members in group '%s': %s", gname, p); // Server includes \n
     } else {
         printf("Server: %s", resp);
     }
@@ -82,7 +82,7 @@ void handle_lsmem(int sock) {
 
 void handle_leave(int sock) {
     char gname[MAX_NAME];
-    input_text("Nhập tên nhóm muốn rời: ", gname, sizeof(gname));
+    input_text("Enter the group name to leave: ", gname, sizeof(gname));
     if (!gname[0]) return;
 
     char req[BUF_SIZE];
@@ -92,16 +92,16 @@ void handle_leave(int sock) {
     char resp[BUF_SIZE];
     if (recv_line(sock, resp, sizeof(resp)) <= 0) return;
 
-    if (strncmp(resp, "LEAVE OK", 8) == 0) printf("Đã rời nhóm '%s'.\n", gname);
-    else if (strncmp(resp, "LEAVE ERR_OWNER", 15) == 0) printf("Lỗi: Bạn là trưởng nhóm, không thể rời nhóm.\n");
-    else if (strncmp(resp, "LEAVE ERR_NOT_IN", 16) == 0) printf("Lỗi: Bạn không ở trong nhóm này.\n");
+    if (strncmp(resp, "LEAVE OK", 8) == 0) printf("You have left the group '%s'.\n", gname);
+    else if (strncmp(resp, "LEAVE ERR_OWNER", 15) == 0) printf("Error: You are the group owner and cannot leave.\n");
+    else if (strncmp(resp, "LEAVE ERR_NOT_IN", 16) == 0) printf("Error: You are not a member of this group.\n");
     else printf("Server: %s", resp);
 }
 
 void handle_rmmem(int sock) {
     char gname[MAX_NAME], uname[MAX_NAME];
-    input_text("Nhập tên nhóm: ", gname, sizeof(gname));
-    input_text("Nhập username muốn xóa: ", uname, sizeof(uname));
+    input_text("Enter group name: ", gname, sizeof(gname));
+    input_text("Enter username to remove: ", uname, sizeof(uname));
     if (!gname[0] || !uname[0]) return;
 
     char req[BUF_SIZE];
@@ -111,9 +111,9 @@ void handle_rmmem(int sock) {
     char resp[BUF_SIZE];
     if (recv_line(sock, resp, sizeof(resp)) <= 0) return;
 
-    if (strncmp(resp, "RMMEM OK", 8) == 0) printf("Đã xóa '%s' khỏi nhóm '%s'.\n", uname, gname);
-    else if (strncmp(resp, "RMMEM ERR_NO_PERM", 17) == 0) printf("Lỗi: Bạn không phải trưởng nhóm.\n");
-    else if (strncmp(resp, "RMMEM ERR_OWNER", 15) == 0) printf("Lỗi: Không thể xóa trưởng nhóm.\n");
+    if (strncmp(resp, "RMMEM OK", 8) == 0) printf("Removed '%s' from group '%s'.\n", uname, gname);
+    else if (strncmp(resp, "RMMEM ERR_NO_PERM", 17) == 0) printf("Error: You do not have permission (not a group owner).\n");
+    else if (strncmp(resp, "RMMEM ERR_OWNER", 15) == 0) printf("Error: Cannot remove the group owner.\n");
     else printf("Server: %s", resp);
 }
 
@@ -123,7 +123,7 @@ void handle_rmmem(int sock) {
 
 void handle_join_request(int sock) {
     char gname[MAX_NAME];
-    input_text("Nhập tên nhóm muốn tham gia: ", gname, sizeof(gname));
+    input_text("Enter the group name you want to join: ", gname, sizeof(gname));
     if (!gname[0]) return;
 
     char req[BUF_SIZE];
@@ -133,14 +133,14 @@ void handle_join_request(int sock) {
     char resp[BUF_SIZE];
     if (recv_line(sock, resp, sizeof(resp)) <= 0) return;
 
-    if (strncmp(resp, "JOIN_REQUEST OK", 15) == 0) printf("Đã gửi yêu cầu tham gia nhóm '%s'.\n", gname);
-    else if (strncmp(resp, "JOIN_REQUEST ERR_ALREADY_IN", 27) == 0) printf("Bạn đã ở trong nhóm này rồi.\n");
+    if (strncmp(resp, "JOIN_REQUEST OK", 15) == 0) printf("Join request sent for group '%s'.\n", gname);
+    else if (strncmp(resp, "JOIN_REQUEST ERR_ALREADY_IN", 27) == 0) printf("You are already a member of this group.\n");
     else printf("Server: %s", resp);
 }
 
 void handle_view_request(int sock) {
     char gname[MAX_NAME];
-    input_text("Nhập tên nhóm (bạn là trưởng nhóm): ", gname, sizeof(gname));
+    input_text("Enter the group name (you must be the owner): ", gname, sizeof(gname));
     if (!gname[0]) return;
 
     char req[BUF_SIZE];
@@ -153,10 +153,10 @@ void handle_view_request(int sock) {
     if (strncmp(resp, "VIEW_REQUEST OK", 15) == 0) {
         char *p = resp + 15;
         while (*p == ' ') p++;
-        if (*p == '\n' || *p == '\0') printf("Không có yêu cầu nào.\n");
-        else printf("Danh sách yêu cầu: %s", p);
+        if (*p == '\n' || *p == '\0') printf("No pending requests.\n");
+        else printf("Pending requests: %s", p);
     } else if (strncmp(resp, "VIEW_REQUEST ERR_NO_PERM", 24) == 0) {
-        printf("Lỗi: Bạn không có quyền xem yêu cầu của nhóm này.\n");
+        printf("Error: You do not have permission to view requests for this group.\n");
     } else {
         printf("Server: %s", resp);
     }
@@ -164,8 +164,8 @@ void handle_view_request(int sock) {
 
 void handle_approve_request(int sock) {
     char gname[MAX_NAME], uname[MAX_NAME];
-    input_text("Nhập tên nhóm: ", gname, sizeof(gname));
-    input_text("Nhập username cần duyệt: ", uname, sizeof(uname));
+    input_text("Enter group name: ", gname, sizeof(gname));
+    input_text("Enter username to approve: ", uname, sizeof(uname));
     if (!gname[0] || !uname[0]) return;
 
     char req[BUF_SIZE];
@@ -175,8 +175,8 @@ void handle_approve_request(int sock) {
     char resp[BUF_SIZE];
     if (recv_line(sock, resp, sizeof(resp)) <= 0) return;
 
-    if (strncmp(resp, "APPROVE_REQUEST OK", 18) == 0) printf("Đã duyệt thành công cho '%s'.\n", uname);
-    else if (strncmp(resp, "APPROVE_REQUEST ERR_REQ_NOT_FOUND", 33) == 0) printf("Lỗi: Không tìm thấy yêu cầu này.\n");
+    if (strncmp(resp, "APPROVE_REQUEST OK", 18) == 0) printf("Successfully approved '%s'.\n", uname);
+    else if (strncmp(resp, "APPROVE_REQUEST ERR_REQ_NOT_FOUND", 33) == 0) printf("Error: Request not found.\n");
     else printf("Server: %s", resp);
 }
 
@@ -186,8 +186,8 @@ void handle_approve_request(int sock) {
 
 void handle_invite(int sock) {
     char gname[MAX_NAME], uname[MAX_NAME];
-    input_text("Nhập tên nhóm: ", gname, sizeof(gname));
-    input_text("Nhập username muốn mời: ", uname, sizeof(uname));
+    input_text("Enter group name: ", gname, sizeof(gname));
+    input_text("Enter username to invite: ", uname, sizeof(uname));
     if (!gname[0] || !uname[0]) return;
 
     char req[BUF_SIZE];
@@ -197,9 +197,9 @@ void handle_invite(int sock) {
     char resp[BUF_SIZE];
     if (recv_line(sock, resp, sizeof(resp)) <= 0) return;
 
-    if (strncmp(resp, "INVITE OK", 9) == 0) printf("Đã gửi lời mời tới '%s'.\n", uname);
-    else if (strncmp(resp, "INVITE ERR_MEMBER_NOT_FOUND", 27) == 0) printf("Lỗi: User không tồn tại.\n");
-    else if (strncmp(resp, "INVITE ERR_ALREADY_IN", 21) == 0) printf("Lỗi: User đã ở trong nhóm.\n");
+    if (strncmp(resp, "INVITE OK", 9) == 0) printf("Invitation sent to '%s'.\n", uname);
+    else if (strncmp(resp, "INVITE ERR_MEMBER_NOT_FOUND", 27) == 0) printf("Error: User not found.\n");
+    else if (strncmp(resp, "INVITE ERR_ALREADY_IN", 21) == 0) printf("Error: User is already in the group.\n");
     else printf("Server: %s", resp);
 }
 
@@ -214,8 +214,8 @@ void handle_view_invite(int sock) {
     if (strncmp(resp, "VIEW_INVITE OK", 14) == 0) {
         char *p = resp + 14;
         while (*p == ' ') p++;
-        if (*p == '\n' || *p == '\0') printf("Bạn không có lời mời nào.\n");
-        else printf("Các lời mời đang chờ: %s", p);
+        if (*p == '\n' || *p == '\0') printf("You have no invites.\n");
+        else printf("Pending invites: %s", p);
     } else {
         printf("Server: %s", resp);
     }
@@ -223,7 +223,7 @@ void handle_view_invite(int sock) {
 
 void handle_accept_invite(int sock) {
     char gname[MAX_NAME];
-    input_text("Nhập tên nhóm muốn chấp nhận: ", gname, sizeof(gname));
+    input_text("Enter the group name to accept invite: ", gname, sizeof(gname));
     if (!gname[0]) return;
 
     char req[BUF_SIZE];
@@ -233,8 +233,8 @@ void handle_accept_invite(int sock) {
     char resp[BUF_SIZE];
     if (recv_line(sock, resp, sizeof(resp)) <= 0) return;
 
-    if (strncmp(resp, "ACCEPT_INVITE OK", 17) == 0) printf("Đã tham gia nhóm '%s'.\n", gname);
-    else if (strncmp(resp, "ACCEPT_INVITE ERR_INVITE_NOT_FOUND", 34) == 0) printf("Lỗi: Không tìm thấy lời mời nào cho nhóm này.\n");
+    if (strncmp(resp, "ACCEPT_INVITE OK", 17) == 0) printf("You have joined group '%s'.\n", gname);
+    else if (strncmp(resp, "ACCEPT_INVITE ERR_INVITE_NOT_FOUND", 34) == 0) printf("Error: No invite found for this group.\n");
     else printf("Server: %s", resp);
 }
 
@@ -244,8 +244,8 @@ void handle_accept_invite(int sock) {
 
 void handle_lsdir(int sock) {
     char gname[MAX_NAME], path[256];
-    input_text("Nhập tên nhóm: ", gname, sizeof(gname));
-    input_text("Nhập đường dẫn (VD: . hoặc subfolder): ", path, sizeof(path));
+    input_text("Enter group name: ", gname, sizeof(gname));
+    input_text("Enter path (e.g., . or subfolder): ", path, sizeof(path));
     if (!gname[0] || !path[0]) return;
 
     char req[BUF_SIZE];
@@ -257,8 +257,8 @@ void handle_lsdir(int sock) {
 
     if (strncmp(resp, "LSDIR OK", 8) == 0) {
         char *p = resp + 8;
-        if (*p == '\n' || *p == '\0') printf("Thư mục rỗng.\n");
-        else printf("Nội dung: %s", p);
+        if (*p == '\n' || *p == '\0') printf("Directory is empty.\n");
+        else printf("Contents: %s", p);
     } else {
         printf("Server: %s", resp);
     }
@@ -266,8 +266,8 @@ void handle_lsdir(int sock) {
 
 void handle_mkdir(int sock) {
     char gname[MAX_NAME], path[256];
-    input_text("Nhập tên nhóm: ", gname, sizeof(gname));
-    input_text("Nhập đường dẫn thư mục mới (VD: docs/tailieu): ", path, sizeof(path));
+    input_text("Enter group name: ", gname, sizeof(gname));
+    input_text("Enter new directory path (e.g., docs/tailieu): ", path, sizeof(path));
     if (!gname[0] || !path[0]) return;
 
     char req[BUF_SIZE];
@@ -277,15 +277,15 @@ void handle_mkdir(int sock) {
     char resp[BUF_SIZE];
     if (recv_line(sock, resp, sizeof(resp)) <= 0) return;
 
-    if (strncmp(resp, "MKDIR OK", 8) == 0) printf("Tạo thư mục thành công.\n");
+    if (strncmp(resp, "MKDIR OK", 8) == 0) printf("Directory created successfully.\n");
     else printf("Server: %s", resp);
 }
 
 void handle_redir(int sock) {
     char gname[MAX_NAME], oldp[256], newname[128];
-    input_text("Nhập tên nhóm: ", gname, sizeof(gname));
-    input_text("Nhập đường dẫn cũ (VD: folder1): ", oldp, sizeof(oldp));
-    input_text("Nhập tên mới (VD: folder_new): ", newname, sizeof(newname));
+    input_text("Enter group name: ", gname, sizeof(gname));
+    input_text("Enter old path (e.g., folder1): ", oldp, sizeof(oldp));
+    input_text("Enter new name (e.g., folder_new): ", newname, sizeof(newname));
     if (!gname[0] || !oldp[0] || !newname[0]) return;
 
     char req[BUF_SIZE];
@@ -295,15 +295,15 @@ void handle_redir(int sock) {
     char resp[BUF_SIZE];
     if (recv_line(sock, resp, sizeof(resp)) <= 0) return;
 
-    if (strncmp(resp, "REDIR OK", 8) == 0) printf("Đổi tên thư mục thành công.\n");
+    if (strncmp(resp, "REDIR OK", 8) == 0) printf("Directory renamed successfully.\n");
     else printf("Server: %s", resp);
 }
 
 void handle_mvdir(int sock) {
     char gname[MAX_NAME], oldp[256], newp[256];
-    input_text("Nhập tên nhóm: ", gname, sizeof(gname));
-    input_text("Nhập đường dẫn nguồn: ", oldp, sizeof(oldp));
-    input_text("Nhập đường dẫn đích: ", newp, sizeof(newp));
+    input_text("Enter group name: ", gname, sizeof(gname));
+    input_text("Enter source path: ", oldp, sizeof(oldp));
+    input_text("Enter destination path: ", newp, sizeof(newp));
     if (!gname[0] || !oldp[0] || !newp[0]) return;
 
     char req[BUF_SIZE];
@@ -313,15 +313,15 @@ void handle_mvdir(int sock) {
     char resp[BUF_SIZE];
     if (recv_line(sock, resp, sizeof(resp)) <= 0) return;
 
-    if (strncmp(resp, "MVDIR OK", 8) == 0) printf("Di chuyển thư mục thành công.\n");
+    if (strncmp(resp, "MVDIR OK", 8) == 0) printf("Directory moved successfully.\n");
     else printf("Server: %s", resp);
 }
 
 void handle_copdir(int sock) {
     char gname[MAX_NAME], oldp[256], newp[256];
-    input_text("Nhập tên nhóm: ", gname, sizeof(gname));
-    input_text("Nhập đường dẫn nguồn: ", oldp, sizeof(oldp));
-    input_text("Nhập đường dẫn đích: ", newp, sizeof(newp));
+    input_text("Enter group name: ", gname, sizeof(gname));
+    input_text("Enter source path: ", oldp, sizeof(oldp));
+    input_text("Enter destination path: ", newp, sizeof(newp));
     if (!gname[0] || !oldp[0] || !newp[0]) return;
 
     char req[BUF_SIZE];
@@ -331,14 +331,14 @@ void handle_copdir(int sock) {
     char resp[BUF_SIZE];
     if (recv_line(sock, resp, sizeof(resp)) <= 0) return;
 
-    if (strncmp(resp, "COPDIR OK", 9) == 0) printf("Copy thư mục thành công.\n");
+    if (strncmp(resp, "COPDIR OK", 9) == 0) printf("Directory copied successfully.\n");
     else printf("Server: %s", resp);
 }
 
 void handle_rmdir(int sock) {
     char gname[MAX_NAME], path[256];
-    input_text("Nhập tên nhóm: ", gname, sizeof(gname));
-    input_text("Nhập đường dẫn thư mục cần xóa: ", path, sizeof(path));
+    input_text("Enter group name: ", gname, sizeof(gname));
+    input_text("Enter directory path to remove: ", path, sizeof(path));
     if (!gname[0] || !path[0]) return;
 
     char req[BUF_SIZE];
@@ -348,15 +348,15 @@ void handle_rmdir(int sock) {
     char resp[BUF_SIZE];
     if (recv_line(sock, resp, sizeof(resp)) <= 0) return;
 
-    if (strncmp(resp, "RMDIR OK", 8) == 0) printf("Xóa thư mục thành công.\n");
+    if (strncmp(resp, "RMDIR OK", 8) == 0) printf("Directory removed successfully.\n");
     else printf("Server: %s", resp);
 }
 
 void handle_refile(int sock) {
     char gname[MAX_NAME], oldp[256], newname[128];
-    input_text("Nhập tên nhóm: ", gname, sizeof(gname));
-    input_text("Nhập đường dẫn file cũ: ", oldp, sizeof(oldp));
-    input_text("Nhập tên file mới: ", newname, sizeof(newname));
+    input_text("Enter group name: ", gname, sizeof(gname));
+    input_text("Enter current file path: ", oldp, sizeof(oldp));
+    input_text("Enter new filename: ", newname, sizeof(newname));
     if (!gname[0] || !oldp[0] || !newname[0]) return;
 
     char req[BUF_SIZE];
@@ -366,15 +366,15 @@ void handle_refile(int sock) {
     char resp[BUF_SIZE];
     if (recv_line(sock, resp, sizeof(resp)) <= 0) return;
 
-    if (strncmp(resp, "REFILE OK", 9) == 0) printf("Đổi tên file thành công.\n");
+    if (strncmp(resp, "REFILE OK", 9) == 0) printf("File renamed successfully.\n");
     else printf("Server: %s", resp);
 }
 
 void handle_mvfile(int sock) {
     char gname[MAX_NAME], src[256], dst[256];
-    input_text("Nhập tên nhóm: ", gname, sizeof(gname));
-    input_text("Nhập đường dẫn file nguồn: ", src, sizeof(src));
-    input_text("Nhập đường dẫn thư mục đích: ", dst, sizeof(dst));
+    input_text("Enter group name: ", gname, sizeof(gname));
+    input_text("Enter source file path: ", src, sizeof(src));
+    input_text("Enter destination directory path: ", dst, sizeof(dst));
     if (!gname[0] || !src[0] || !dst[0]) return;
 
     char req[BUF_SIZE];
@@ -384,15 +384,15 @@ void handle_mvfile(int sock) {
     char resp[BUF_SIZE];
     if (recv_line(sock, resp, sizeof(resp)) <= 0) return;
 
-    if (strncmp(resp, "MVFILE OK", 9) == 0) printf("Di chuyển file thành công.\n");
+    if (strncmp(resp, "MVFILE OK", 9) == 0) printf("File moved successfully.\n");
     else printf("Server: %s", resp);
 }
 
 void handle_copfile(int sock) {
     char gname[MAX_NAME], src[256], dst[256];
-    input_text("Nhập tên nhóm: ", gname, sizeof(gname));
-    input_text("Nhập đường dẫn file nguồn: ", src, sizeof(src));
-    input_text("Nhập đường dẫn thư mục đích: ", dst, sizeof(dst));
+    input_text("Enter group name: ", gname, sizeof(gname));
+    input_text("Enter source file path: ", src, sizeof(src));
+    input_text("Enter destination directory path: ", dst, sizeof(dst));
     if (!gname[0] || !src[0] || !dst[0]) return;
 
     char req[BUF_SIZE];
@@ -402,14 +402,14 @@ void handle_copfile(int sock) {
     char resp[BUF_SIZE];
     if (recv_line(sock, resp, sizeof(resp)) <= 0) return;
 
-    if (strncmp(resp, "COPFILE OK", 10) == 0) printf("Copy file thành công.\n");
+    if (strncmp(resp, "COPFILE OK", 10) == 0) printf("File copied successfully.\n");
     else printf("Server: %s", resp);
 }
 
 void handle_rmfile(int sock) {
     char gname[MAX_NAME], path[256];
-    input_text("Nhập tên nhóm: ", gname, sizeof(gname));
-    input_text("Nhập đường dẫn file cần xóa: ", path, sizeof(path));
+    input_text("Enter group name: ", gname, sizeof(gname));
+    input_text("Enter file path to remove: ", path, sizeof(path));
     if (!gname[0] || !path[0]) return;
 
     char req[BUF_SIZE];
@@ -419,13 +419,13 @@ void handle_rmfile(int sock) {
     char resp[BUF_SIZE];
     if (recv_line(sock, resp, sizeof(resp)) <= 0) return;
 
-    if (strncmp(resp, "RMFILE OK", 9) == 0) printf("Xóa file thành công.\n");
+    if (strncmp(resp, "RMFILE OK", 9) == 0) printf("File removed successfully.\n");
     else printf("Server: %s", resp);
 }
 
 void handle_join_req_status(int sock) {
     char gname[MAX_NAME];
-    input_text("Nhập tên nhóm bạn đã gửi yêu cầu: ", gname, sizeof(gname));
+    input_text("Enter the group name you requested to join: ", gname, sizeof(gname));
     if (!gname[0]) return;
 
     char req[BUF_SIZE];
@@ -436,11 +436,11 @@ void handle_join_req_status(int sock) {
     if (recv_line(sock, resp, sizeof(resp)) <= 0) return;
 
     if (strncmp(resp, "STATUS APPROVED", 15) == 0) 
-        printf("--> Bạn ĐÃ LÀ THÀNH VIÊN của nhóm '%s'.\n", gname);
+        printf("You ARE NOW A MEMBER of group '%s'.\n", gname);
     else if (strncmp(resp, "STATUS PENDING", 14) == 0) 
-        printf("--> Yêu cầu đang CHỜ DUYỆT.\n");
+        printf("Your request is still PENDING.\n");
     else if (strncmp(resp, "STATUS REJECTED", 15) == 0) 
-        printf("--> Yêu cầu đã bị TỪ CHỐI (hoặc chưa từng gửi).\n");
+        printf("Your request was REJECTED (or not found).\n");
     else 
         printf("Server: %s", resp);
 }
@@ -448,7 +448,7 @@ void handle_join_req_status(int sock) {
 // Kiểm tra danh sách mời của nhóm (Chỉ chủ nhóm)
 void handle_invite_status(int sock) {
     char gname[MAX_NAME];
-    input_text("Nhập tên nhóm (bạn là chủ): ", gname, sizeof(gname));
+    input_text("Enter group name (you must be the owner): ", gname, sizeof(gname));
     if (!gname[0]) return;
 
     char req[BUF_SIZE];
@@ -461,10 +461,10 @@ void handle_invite_status(int sock) {
     if (strncmp(resp, "STATUS_LIST", 11) == 0) {
         char *p = resp + 11; 
         if (strncmp(p, " EMPTY", 6) == 0) {
-            printf("--> Nhóm này chưa từng mời ai.\n");
+            printf("--> This group has not invited anyone yet.\n");
         } else {
-            printf("\n--- DANH SÁCH LỊCH SỬ MỜI ---\n");
-            printf("%-20s | %-15s\n", "User", "Trạng thái");
+            printf("\n--- INVITE HISTORY ---\n");
+            printf("%-20s | %-15s\n", "User", "Status");
             printf("---------------------+----------------\n");
             
             // Server gửi: " User1:PENDING User2:ACCEPTED"
@@ -485,7 +485,7 @@ void handle_invite_status(int sock) {
         }
     } 
     else if (strncmp(resp, "STATUS ERR_NO_PERM", 18) == 0) {
-        printf("Lỗi: Bạn không phải trưởng nhóm.\n");
+        printf("Error: You are not the group owner.\n");
     } 
     else {
         printf("Server: %s", resp);

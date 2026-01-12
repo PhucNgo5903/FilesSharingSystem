@@ -43,7 +43,7 @@ void req_upload(int sock, char *destination, char *path) {
         return;
     }
 
-    printf("READY_UPLOAD OK\n");
+    printf("Ready for uploading... Please wait.\n");
     // ... (Đoạn gửi chunk giữ nguyên) ...
     long total_chunks = (filesize + BUFFER_SIZE - 1) / BUFFER_SIZE;
     if (total_chunks == 0) total_chunks = 1;
@@ -60,10 +60,10 @@ void req_upload(int sock, char *destination, char *path) {
 
     len = recv(sock, response, 1023, 0);
     response[len] = 0;
-    if (strstr(response, "UPLOAD DONE")) {
-        printf("DONE_UPLOAD OK\n");
+    if (strstr(response, "DONE_UPLOAD")) {
+        printf("Success: File '%s' uploaded successfully.\n", filename);
     } else {
-        printf("%s\n", response);
+        printf("Upload failed: %s\n", response);
     }
 }
 
@@ -85,16 +85,16 @@ void req_download(int sock, char *server_path, char *local_destination) {
         sscanf(response, "DOWNLOAD 200 %ld", &filesize);
     } else {
         if (strstr(response, "ERR_NO_PERMISSION")) {
-            printf("[Client] Error: You do not have permission for this group/file.\n");
+            printf("Error: You do not have permission for this group/file.\n");
         } else if (strstr(response, "FILE_NOT_FOUND")) {
-            printf("[Client] Error: File not found on server.\n");
+            printf("Error: File not found on server.\n");
         } else {
-            printf("[Client] Download failed: %s", response);
+            printf("Download failed: %s", response);
         }
         return;
     }
 
-    printf("READY_DOWNLOAD OK\n");
+    printf("Ready for downloading... Please wait.\n");
 
     // 3. Xác định đường dẫn lưu file cục bộ
     // Nếu local_destination là thư mục (kết thúc bằng /) -> ghép tên file gốc vào
@@ -120,7 +120,7 @@ void req_download(int sock, char *server_path, char *local_destination) {
 
     FILE *fp = fopen(savepath, "wb");
     if (!fp) {
-        printf("[Client] Error: Cannot create file at %s. Check path or permission.\n", savepath);
+        printf("Error: Cannot create file at %s. Check path or permission.\n", savepath);
         // Vẫn phải đọc hết dữ liệu rác từ server để tránh lỗi protocol
         // (Tuy nhiên trong demo đơn giản có thể return luôn, nhưng tốt nhất là drain socket)
         return; 
@@ -140,6 +140,6 @@ void req_download(int sock, char *server_path, char *local_destination) {
     }
 
     fclose(fp);
-    printf("DONE_DOWNLOAD OK\n");
-    printf("[Client] File saved to: %s\n", savepath);
+    
+    printf("Success: File saved to: %s\n", savepath);
 }

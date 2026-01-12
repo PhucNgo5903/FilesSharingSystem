@@ -35,7 +35,7 @@ int req_signin(int sock, char *current_user) {
     
     if (strncmp(buf, "SIGNIN OK", 9) == 0) {
         strcpy(current_user, u);
-        printf("Login successful!\n");
+        printf("Login successful. Welcome!\n");
         return 1;
     } else {
         printf("Login failed: %s", buf);
@@ -67,5 +67,5 @@ void req_lsgrp(int sock) {
     char buf[1024];
     int n = recv(sock, buf, sizeof(buf)-1, 0);
     buf[n] = 0;
-    printf("Server Group List:\n%s\n", buf);
+    printf("Available groups:\n%s\n", buf);
 }
