@@ -74,7 +74,7 @@ void req_logout(int sock) {
     char buf[128];
     int n = recv(sock, buf, sizeof(buf)-1, 0);
     buf[n] = 0;
-    printf("%s", buf);
+    // printf("%s", buf);
 }
 
 void req_mkgrp(int sock) {

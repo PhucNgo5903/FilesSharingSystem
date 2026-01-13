@@ -110,7 +110,7 @@ void handle_client(int client_sock) {
         else if (strcmp(cmd, "LOGOUT") == 0) {
             server_log_main(client_name, "RECV", "%s", buffer);
             is_logged_in = 0;
-            strcpy(client_name, "UNKNOWN");
+            // strcpy(client_name, "UNKNOWN");
             send(client_sock, "LOGOUT OK\n", 10, 0);
             server_log_main(client_name, "SEND", "LOGOUT OK");
         }
@@ -186,28 +186,80 @@ void handle_client(int client_sock) {
                 server_log_main(client_name, "SEND", "LEAVE ERR_INTERNAL");
             }
         }
+        // else if (strcmp(cmd, "RMMEM") == 0) {
+        //     server_log_main(client_name, "RECV", "%s", buffer);
+        //     if (!is_logged_in) { 
+        //         send(client_sock, "RMMEM ERR_NOT_LOGIN\n", 20, 0); 
+        //         server_log_main(client_name, "SEND", "RMMEM ERR_NOT_LOGIN");
+        //         continue; 
+        //     }
+        //     if (!is_group_owner(arg1, client_name)) { 
+        //         send(client_sock, "RMMEM ERR_NO_PERM\n", 18, 0); 
+        //         server_log_main(client_name, "SEND", "RMMEM ERR_NO_PERM");
+        //         continue; 
+        //     }
+        //     if (is_group_owner(arg1, arg2)) { 
+        //         send(client_sock, "RMMEM ERR_OWNER\n", 16, 0); 
+        //         server_log_main(client_name, "SEND", "RMMEM ERR_OWNER");
+        //         continue; 
+        //     }
+
+        //     if (remove_member_from_group(arg1, arg2)) {
+        //         send(client_sock, "RMMEM OK\n", 9, 0);
+        //         server_log_main(client_name, "SEND", "RMMEM OK");
+        //     } else {
+        //         send(client_sock, "RMMEM ERR_INTERNAL\n", 19, 0);
+        //         server_log_main(client_name, "SEND", "RMMEM ERR_INTERNAL");
+        //     }
+        // }
         else if (strcmp(cmd, "RMMEM") == 0) {
             server_log_main(client_name, "RECV", "%s", buffer);
+            
             if (!is_logged_in) { 
                 send(client_sock, "RMMEM ERR_NOT_LOGIN\n", 20, 0); 
                 server_log_main(client_name, "SEND", "RMMEM ERR_NOT_LOGIN");
                 continue; 
             }
-            if (!is_group_owner(arg1, client_name)) { 
+
+            char *group_name = arg1;
+            char *target_user = arg2;
+
+            // 1. [NEW] Kiểm tra nhóm tồn tại
+            if (!group_exists(group_name)) {
+                char msg[] = "RMMEM ERR_GRP_NOT_FOUND\n";
+                send(client_sock, msg, strlen(msg), 0);
+                server_log_main(client_name, "SEND", "RMMEM ERR_GRP_NOT_FOUND");
+                continue;
+            }
+
+            // 2. Kiểm tra quyền Owner
+            if (!is_group_owner(group_name, client_name)) { 
                 send(client_sock, "RMMEM ERR_NO_PERM\n", 18, 0); 
                 server_log_main(client_name, "SEND", "RMMEM ERR_NO_PERM");
                 continue; 
             }
-            if (is_group_owner(arg1, arg2)) { 
+
+            // 3. [NEW] Kiểm tra user bị xóa có trong nhóm không?
+            if (!check_user_in_group(target_user, group_name)) {
+                char msg[] = "RMMEM ERR_MEMBER_NOT_FOUND\n";
+                send(client_sock, msg, strlen(msg), 0);
+                server_log_main(client_name, "SEND", "RMMEM ERR_MEMBER_NOT_FOUND");
+                continue;
+            }
+
+            // 4. Kiểm tra xóa chính mình (Owner)
+            if (strcmp(target_user, client_name) == 0) { 
                 send(client_sock, "RMMEM ERR_OWNER\n", 16, 0); 
                 server_log_main(client_name, "SEND", "RMMEM ERR_OWNER");
                 continue; 
             }
 
-            if (remove_member_from_group(arg1, arg2)) {
+            // 5. Thực hiện xóa (Hàm này giờ đã trả về đúng 0/1 nhờ bước sửa ở trên)
+            if (remove_member_from_group(group_name, target_user)) {
                 send(client_sock, "RMMEM OK\n", 9, 0);
                 server_log_main(client_name, "SEND", "RMMEM OK");
             } else {
+                // Trường hợp lỗi file hoặc lỗi hệ thống khác
                 send(client_sock, "RMMEM ERR_INTERNAL\n", 19, 0);
                 server_log_main(client_name, "SEND", "RMMEM ERR_INTERNAL");
             }
@@ -221,6 +273,13 @@ void handle_client(int client_sock) {
                 server_log_main(client_name, "SEND", "JOIN_REQUEST ERR_NOT_LOGIN");
                 continue; 
             }
+
+            if (!group_exists(arg1)) { // arg1 là tên nhóm client gửi lên
+                send(client_sock, "JOIN_REQUEST ERR_GRP_NOT_FOUND\n", 31, 0);
+                server_log_main(client_name, "SEND", "JOIN_REQUEST ERR_GRP_NOT_FOUND");
+                continue;
+            }
+
             if (check_user_in_group(client_name, arg1)) { 
                 send(client_sock, "JOIN_REQUEST ERR_ALREADY_IN\n", 28, 0); 
                 server_log_main(client_name, "SEND", "JOIN_REQUEST ERR_ALREADY_IN");
@@ -242,6 +301,12 @@ void handle_client(int client_sock) {
                 server_log_main(client_name, "SEND", "VIEW_REQUEST ERR_NOT_LOGIN");
                 continue; 
             }
+            if (!group_exists(arg1)) {
+                char msg[] = "VIEW_REQUEST ERR_GRP_NOT_FOUND\n";
+                send(client_sock, msg, strlen(msg), 0);
+                server_log_main(client_name, "SEND", "VIEW_REQUEST ERR_GRP_NOT_FOUND");
+                continue;
+            }
             if (!is_group_owner(arg1, client_name)) { 
                 send(client_sock, "VIEW_REQUEST ERR_NO_PERM\n", 25, 0); 
                 server_log_main(client_name, "SEND", "VIEW_REQUEST ERR_NO_PERM");
@@ -255,51 +320,150 @@ void handle_client(int client_sock) {
             // --- SỬA ĐỔI: Log chính xác chuỗi gửi đi ---
             server_log_main(client_name, "SEND", "%s", resp);
         }
+        // else if (strcmp(cmd, "APPROVE_REQUEST") == 0) {
+        //     server_log_main(client_name, "RECV", "%s", buffer);
+        //     if (!is_logged_in) { 
+        //         send(client_sock, "APPROVE_REQUEST ERR_NOT_LOGIN\n", 30, 0); 
+        //         server_log_main(client_name, "SEND", "APPROVE_REQUEST ERR_NOT_LOGIN");
+        //         continue; 
+        //     }
+        //     if (!is_group_owner(arg1, client_name)) { 
+        //         send(client_sock, "APPROVE_REQUEST ERR_NO_PERM\n", 28, 0); 
+        //         server_log_main(client_name, "SEND", "APPROVE_REQUEST ERR_NO_PERM");
+        //         continue; 
+        //     }
+
+        //     if (approve_join_request(arg1, arg2)) {
+        //         send(client_sock, "APPROVE_REQUEST OK\n", 19, 0);
+        //         server_log_main(client_name, "SEND", "APPROVE_REQUEST OK");
+        //     } else {
+        //         send(client_sock, "APPROVE_REQUEST ERR_REQ_NOT_FOUND\n", 34, 0);
+        //         server_log_main(client_name, "SEND", "APPROVE_REQUEST ERR_REQ_NOT_FOUND");
+        //     }
+        // }
         else if (strcmp(cmd, "APPROVE_REQUEST") == 0) {
             server_log_main(client_name, "RECV", "%s", buffer);
+            
             if (!is_logged_in) { 
                 send(client_sock, "APPROVE_REQUEST ERR_NOT_LOGIN\n", 30, 0); 
-                server_log_main(client_name, "SEND", "APPROVE_REQUEST ERR_NOT_LOGIN");
-                continue; 
-            }
-            if (!is_group_owner(arg1, client_name)) { 
-                send(client_sock, "APPROVE_REQUEST ERR_NO_PERM\n", 28, 0); 
-                server_log_main(client_name, "SEND", "APPROVE_REQUEST ERR_NO_PERM");
                 continue; 
             }
 
-            if (approve_join_request(arg1, arg2)) {
+            char *group_name = arg1;
+            char *target_user = arg2;
+
+            // 1. Kiểm tra nhóm tồn tại (Giữ nguyên từ bước trước)
+            if (!group_exists(group_name)) {
+                char msg[] = "APPROVE_REQUEST ERR_GRP_NOT_FOUND\n";
+                send(client_sock, msg, strlen(msg), 0);
+                server_log_main(client_name, "SEND", "APPROVE_REQUEST ERR_GRP_NOT_FOUND");
+                continue;
+            }
+
+            // --- [SỬA LẠI ĐOẠN KIỂM TRA OWNER TẠI ĐÂY] ---
+            // Code cũ: Dùng get_group_owner và biến owner[MAX_NAME] -> Gây lỗi
+            // Code mới: Dùng is_group_owner -> Ngắn gọn, không lỗi
+            
+            if (!is_group_owner(group_name, client_name)) {
+                char msg[] = "APPROVE_REQUEST ERR_NO_PERM\n";
+                send(client_sock, msg, strlen(msg), 0);
+                server_log_main(client_name, "SEND", "APPROVE_REQUEST ERR_NO_PERM");
+                continue;
+            }
+            // ---------------------------------------------
+
+            // 3. Gọi hàm xử lý logic (Giữ nguyên)
+            int res = approve_join_request(group_name, target_user);
+            
+            if (res == 1) {
                 send(client_sock, "APPROVE_REQUEST OK\n", 19, 0);
                 server_log_main(client_name, "SEND", "APPROVE_REQUEST OK");
-            } else {
-                send(client_sock, "APPROVE_REQUEST ERR_REQ_NOT_FOUND\n", 34, 0);
+            } 
+            else if (res == -1) { 
+                char msg[] = "APPROVE_REQUEST ERR_REQ_NOT_FOUND\n";
+                send(client_sock, msg, strlen(msg), 0);
                 server_log_main(client_name, "SEND", "APPROVE_REQUEST ERR_REQ_NOT_FOUND");
+            }
+            else {
+                send(client_sock, "APPROVE_REQUEST ERR_INTERNAL\n", 29, 0);
             }
         }
 
         // ================== INVITE SYSTEM ==================
+        // else if (strcmp(cmd, "INVITE") == 0) {
+        //     server_log_main(client_name, "RECV", "%s", buffer);
+        //     if (!is_logged_in) { 
+        //         send(client_sock, "INVITE ERR_NOT_LOGIN\n", 21, 0); 
+        //         server_log_main(client_name, "SEND", "INVITE ERR_NOT_LOGIN");
+        //         continue; 
+        //     }
+        //     if (!is_group_owner(arg1, client_name)) { 
+        //         send(client_sock, "INVITE ERR_NO_PERM\n", 19, 0); 
+        //         server_log_main(client_name, "SEND", "INVITE ERR_NO_PERM");
+        //         continue; 
+        //     }
+        //     if (check_user_in_group(arg2, arg1)) { 
+        //         send(client_sock, "INVITE ERR_ALREADY_IN\n", 22, 0); 
+        //         server_log_main(client_name, "SEND", "INVITE ERR_ALREADY_IN");
+        //         continue; 
+        //     }
+
+        //     if (add_invite(arg2, arg1)) {
+        //         send(client_sock, "INVITE OK\n", 10, 0);
+        //         server_log_main(client_name, "SEND", "INVITE OK");
+        //     } else {
+        //         send(client_sock, "INVITE ERR_INTERNAL\n", 20, 0);
+        //         server_log_main(client_name, "SEND", "INVITE ERR_INTERNAL");
+        //     }
+        // }
         else if (strcmp(cmd, "INVITE") == 0) {
             server_log_main(client_name, "RECV", "%s", buffer);
+            
             if (!is_logged_in) { 
                 send(client_sock, "INVITE ERR_NOT_LOGIN\n", 21, 0); 
-                server_log_main(client_name, "SEND", "INVITE ERR_NOT_LOGIN");
                 continue; 
             }
-            if (!is_group_owner(arg1, client_name)) { 
+
+            char *group_name = arg1;
+            char *target_user = arg2;
+
+            // --- [FIX VẤN ĐỀ 1: CHECK NHÓM TỒN TẠI TRƯỚC] ---
+            if (!group_exists(group_name)) {
+                char msg[] = "INVITE ERR_GRP_NOT_FOUND\n";
+                send(client_sock, msg, strlen(msg), 0);
+                server_log_main(client_name, "SEND", "INVITE ERR_GRP_NOT_FOUND");
+                continue;
+            }
+            // -----------------------------------------------
+
+            // Sau đó mới kiểm tra quyền Owner
+            if (!is_group_owner(group_name, client_name)) { 
                 send(client_sock, "INVITE ERR_NO_PERM\n", 19, 0); 
                 server_log_main(client_name, "SEND", "INVITE ERR_NO_PERM");
                 continue; 
             }
-            if (check_user_in_group(arg2, arg1)) { 
+
+            // Kiểm tra đã là thành viên chưa
+            if (check_user_in_group(target_user, group_name)) { 
                 send(client_sock, "INVITE ERR_ALREADY_IN\n", 22, 0); 
                 server_log_main(client_name, "SEND", "INVITE ERR_ALREADY_IN");
                 continue; 
             }
 
-            if (add_invite(arg2, arg1)) {
+            // Gọi hàm add_invite và xử lý kết quả trả về
+            int res = add_invite(target_user, group_name);
+
+            if (res == 1) {
                 send(client_sock, "INVITE OK\n", 10, 0);
                 server_log_main(client_name, "SEND", "INVITE OK");
-            } else {
+            } 
+            else if (res == -1) {
+                // [FIX VẤN ĐỀ 2: Xử lý khi add_invite trả về -1]
+                char msg[] = "INVITE ERR_USER_NOT_FOUND\n";
+                send(client_sock, msg, strlen(msg), 0);
+                server_log_main(client_name, "SEND", "INVITE ERR_USER_NOT_FOUND");
+            } 
+            else {
                 send(client_sock, "INVITE ERR_INTERNAL\n", 20, 0);
                 server_log_main(client_name, "SEND", "INVITE ERR_INTERNAL");
             }
@@ -319,20 +483,56 @@ void handle_client(int client_sock) {
             // --- SỬA ĐỔI: Log chính xác chuỗi gửi đi ---
             server_log_main(client_name, "SEND", "%s", resp);
         }
+        // else if (strcmp(cmd, "ACCEPT_INVITE") == 0) {
+        //     server_log_main(client_name, "RECV", "%s", buffer);
+        //     if (!is_logged_in) { 
+        //         send(client_sock, "ACCEPT_INVITE ERR_NOT_LOGIN\n", 28, 0); 
+        //         server_log_main(client_name, "SEND", "ACCEPT_INVITE ERR_NOT_LOGIN");
+        //         continue; 
+        //     }
+
+        //     if (accept_invite(client_name, arg1)) {
+        //         send(client_sock, "ACCEPT_INVITE OK\n", 17, 0);
+        //         server_log_main(client_name, "SEND", "ACCEPT_INVITE OK");
+        //     } else {
+        //         send(client_sock, "ACCEPT_INVITE ERR_INVITE_NOT_FOUND\n", 35, 0);
+        //         server_log_main(client_name, "SEND", "ACCEPT_INVITE ERR_INVITE_NOT_FOUND");
+        //     }
+        // }
         else if (strcmp(cmd, "ACCEPT_INVITE") == 0) {
             server_log_main(client_name, "RECV", "%s", buffer);
+            
             if (!is_logged_in) { 
                 send(client_sock, "ACCEPT_INVITE ERR_NOT_LOGIN\n", 28, 0); 
-                server_log_main(client_name, "SEND", "ACCEPT_INVITE ERR_NOT_LOGIN");
                 continue; 
             }
 
-            if (accept_invite(client_name, arg1)) {
+            // Lấy kết quả trả về
+            int res = accept_invite(client_name, arg1);
+
+            if (res == 1) {
                 send(client_sock, "ACCEPT_INVITE OK\n", 17, 0);
                 server_log_main(client_name, "SEND", "ACCEPT_INVITE OK");
-            } else {
+            } 
+            else if (res == -1) {
+                // Không có lời mời
                 send(client_sock, "ACCEPT_INVITE ERR_INVITE_NOT_FOUND\n", 35, 0);
                 server_log_main(client_name, "SEND", "ACCEPT_INVITE ERR_INVITE_NOT_FOUND");
+            }
+            else if (res == -2) {
+                // Nhóm không tồn tại
+                char msg[] = "ACCEPT_INVITE ERR_GRP_NOT_FOUND\n";
+                send(client_sock, msg, strlen(msg), 0);
+                server_log_main(client_name, "SEND", "ACCEPT_INVITE ERR_GRP_NOT_FOUND");
+            }
+            else if (res == -3) {
+                // Đã là thành viên
+                char msg[] = "ACCEPT_INVITE ERR_ALREADY_IN\n";
+                send(client_sock, msg, strlen(msg), 0);
+                server_log_main(client_name, "SEND", "ACCEPT_INVITE ERR_ALREADY_IN");
+            }
+            else {
+                send(client_sock, "ACCEPT_INVITE ERR_INTERNAL\n", 27, 0);
             }
         }
 
@@ -566,25 +766,60 @@ void handle_client(int client_sock) {
             server_log_main(client_name, "SEND", "%s", resp); // Log danh sách trả về
         }
 
+        // else if (strcmp(cmd, "INVITE_STATUS") == 0) {
+        //     server_log_main(client_name, "RECV", "%s", buffer);
+        //     if (!is_logged_in) { 
+        //         send(client_sock, "STATUS ERR_NOT_LOGIN\n", 21, 0); 
+        //         server_log_main(client_name, "SEND", "STATUS ERR_NOT_LOGIN");
+        //         continue; 
+        //     }
+            
+        //     if (!is_group_owner(arg1, client_name)) { 
+        //         send(client_sock, "STATUS ERR_NO_PERM\n", 19, 0); 
+        //         server_log_main(client_name, "SEND", "STATUS ERR_NO_PERM");
+        //         continue; 
+        //     }
+
+        //     char resp[4096];
+        //     build_invite_status_all_response(arg1, resp, sizeof(resp));
+        //     send(client_sock, resp, strlen(resp), 0);
+            
+        //     // --- SỬA ĐỔI: Log chính xác chuỗi gửi đi ---
+        //     server_log_main(client_name, "SEND", "%s", resp);
+        // }
         else if (strcmp(cmd, "INVITE_STATUS") == 0) {
             server_log_main(client_name, "RECV", "%s", buffer);
+            
+            // 1. Check Login
             if (!is_logged_in) { 
-                send(client_sock, "STATUS ERR_NOT_LOGIN\n", 21, 0); 
-                server_log_main(client_name, "SEND", "STATUS ERR_NOT_LOGIN");
+                send(client_sock, "INVITE_STATUS ERR_NOT_LOGIN\n", 28, 0); 
+                server_log_main(client_name, "SEND", "INVITE_STATUS ERR_NOT_LOGIN");
                 continue; 
             }
             
-            if (!is_group_owner(arg1, client_name)) { 
-                send(client_sock, "STATUS ERR_NO_PERM\n", 19, 0); 
-                server_log_main(client_name, "SEND", "STATUS ERR_NO_PERM");
+            char *group_name = arg1;
+
+            // 2. Check Nhóm tồn tại
+            if (!group_exists(group_name)) {
+                char msg[] = "INVITE_STATUS ERR_GRP_NOT_FOUND\n";
+                send(client_sock, msg, strlen(msg), 0);
+                server_log_main(client_name, "SEND", "INVITE_STATUS ERR_GRP_NOT_FOUND");
+                continue;
+            }
+
+            // 3. Check Quyền Owner
+            if (!is_group_owner(group_name, client_name)) { 
+                char msg[] = "INVITE_STATUS ERR_NO_PERM\n";
+                send(client_sock, msg, strlen(msg), 0); 
+                server_log_main(client_name, "SEND", "INVITE_STATUS ERR_NO_PERM");
                 continue; 
             }
 
+            // 4. Xử lý thành công
             char resp[4096];
-            build_invite_status_all_response(arg1, resp, sizeof(resp));
-            send(client_sock, resp, strlen(resp), 0);
+            build_invite_status_all_response(group_name, resp, sizeof(resp));
             
-            // --- SỬA ĐỔI: Log chính xác chuỗi gửi đi ---
+            send(client_sock, resp, strlen(resp), 0);
             server_log_main(client_name, "SEND", "%s", resp);
         }
 
@@ -637,7 +872,7 @@ void handle_client(int client_sock) {
             else strcpy(group_name, server_path);
 
             if (!check_user_in_group(client_name, group_name)) {
-                server_log_main(client_name, "RECV", "DOWNLOAD %s (Check Permission)", server_path);
+                server_log_main(client_name, "RECV", "DOWNLOAD %s", server_path);
                 send(client_sock, "DOWNLOAD ERR_NO_PERMISSION\n", 27, 0);
                 server_log_main(client_name, "SEND", "DOWNLOAD ERR_NO_PERMISSION");
                 continue;

@@ -30,13 +30,13 @@ void req_upload(int sock, char *destination, char *path) {
     if (strstr(response, "READY_UPLOAD") == NULL) {
         // --- CHECK LỖI MỚI: THƯ MỤC KHÔNG TỒN TẠI ---
         if (strstr(response, "ERR_DIR_NOT_FOUND")) {
-            printf("[Client] Error: Destination folder '%s' does not exist on server.\n", destination);
+            printf("Error: Destination folder '%s' does not exist on server.\n", destination);
         } 
         else if (strstr(response, "ERR_NO_PERMISSION")) {
-            printf("[Client] Error: You do not have permission for this group.\n");
+            printf("Error: You do not have permission for this group.\n");
         }
         else {
-            printf("[Client] Server Error: %s", response);
+            printf("Server Error: %s", response);
         }
         // ---------------------------------------------
         fclose(fp);
@@ -67,79 +67,82 @@ void req_upload(int sock, char *destination, char *path) {
     }
 }
 
-// Xử lý Download File
 void req_download(int sock, char *server_path, char *local_destination) {
     // 1. Gửi lệnh: DOWNLOAD <server_path>
-    char cmd[1024];
-    sprintf(cmd, "DOWNLOAD \"%s\"\n", server_path);
+    char cmd[BUFSIZ];
+    snprintf(cmd, sizeof(cmd), "DOWNLOAD %s\n", server_path); 
     send(sock, cmd, strlen(cmd), 0);
 
     // 2. Nhận phản hồi
-    char response[1024];
-    int len = recv(sock, response, 1023, 0);
-    if (len <= 0) return;
-    response[len] = 0;
+    char response[BUFSIZ];
+    if (recv_line(sock, response, sizeof(response)) <= 0) return;
 
     long filesize = 0;
-    if (strncmp(response, "DOWNLOAD 200", 12) == 0) {
-        sscanf(response, "DOWNLOAD 200 %ld", &filesize);
-    } else {
-        if (strstr(response, "ERR_NO_PERMISSION")) {
-            printf("Error: You do not have permission for this group/file.\n");
-        } else if (strstr(response, "FILE_NOT_FOUND")) {
-            printf("Error: File not found on server.\n");
-        } else {
-            printf("Download failed: %s", response);
-        }
+
+    // --- CHECK PROTOCOL ---
+    if (strncmp(response, "READY_DOWNLOAD OK", 17) == 0) {
+        sscanf(response, "READY_DOWNLOAD OK %ld", &filesize);
+    } 
+    else if (strncmp(response, "DOWNLOAD ERR_FILE_NOT_FOUND", 27) == 0) {
+        printf("Error: File not found on server.\n");
+        return;
+    }
+    else if (strncmp(response, "DOWNLOAD ERR_NOT_LOGIN", 22) == 0) {
+        printf("Error: You must login first.\n");
+        return;
+    }
+    else {
+        printf("Download failed. Server response: %s", response);
         return;
     }
 
-    printf("Ready for downloading... Please wait.\n");
+    printf("Server ready. File size: %ld bytes\n", filesize);
 
     // 3. Xác định đường dẫn lưu file cục bộ
-    // Nếu local_destination là thư mục (kết thúc bằng /) -> ghép tên file gốc vào
-    // Nếu local_destination là file -> dùng luôn
     char savepath[512];
     struct stat st = {0};
 
-    // Kiểm tra xem local_destination có phải là thư mục tồn tại không
     if (stat(local_destination, &st) != -1 && S_ISDIR(st.st_mode)) {
-        // Tách tên file từ server_path (VD: "group/docs/file.txt" -> "file.txt")
         char *filename = strrchr(server_path, '/');
         if (filename) filename++; else filename = server_path;
         
-        // Ghép đường dẫn: local_dest + / + filename
         if (local_destination[strlen(local_destination)-1] == '/')
-             sprintf(savepath, "%s%s", local_destination, filename);
+             snprintf(savepath, sizeof(savepath), "%s%s", local_destination, filename);
         else
-             sprintf(savepath, "%s/%s", local_destination, filename);
+             snprintf(savepath, sizeof(savepath), "%s/%s", local_destination, filename);
     } else {
-        // Coi như người dùng nhập đường dẫn file đầy đủ
-        strcpy(savepath, local_destination);
+        strncpy(savepath, local_destination, sizeof(savepath));
     }
 
     FILE *fp = fopen(savepath, "wb");
     if (!fp) {
-        printf("Error: Cannot create file at %s. Check path or permission.\n", savepath);
-        // Vẫn phải đọc hết dữ liệu rác từ server để tránh lỗi protocol
-        // (Tuy nhiên trong demo đơn giản có thể return luôn, nhưng tốt nhất là drain socket)
+        printf("Error: Cannot create file at %s. Check permission.\n", savepath);
+        char trash[BUFFER_SIZE];
+        while (recv_chunk(sock, trash) > 0);
         return; 
     }
     
-    // 4. Nhận chunk
+    printf("Downloading to: %s\n", savepath);
+    
+    // --- [SỬA ĐỔI ĐỂ GIỐNG UPLOAD] ---
+    
+    // 1. Tính tổng số chunk dự kiến
     long total_chunks = (filesize + BUFFER_SIZE - 1) / BUFFER_SIZE;
     if (total_chunks == 0) total_chunks = 1;
+
     char buffer[BUFFER_SIZE];
     int chunk_len;
-    int chunk_count = 0;
-    
+    int chunk_count = 0; // Biến đếm chunk
+
+    // 2. Vòng lặp nhận và in ra từng chunk
     while ((chunk_len = recv_chunk(sock, buffer)) > 0) {
         fwrite(buffer, 1, chunk_len, fp);
+        
         chunk_count++;
+        // In ra dòng thông báo giống Upload
         printf("Chunk %d/%ld downloaded\n", chunk_count, total_chunks);
     }
 
     fclose(fp);
-    
-    printf("Success: File saved to: %s\n", savepath);
+    printf("Success: Download Complete!\n");
 }

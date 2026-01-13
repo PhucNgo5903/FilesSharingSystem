@@ -83,13 +83,14 @@ void handle_upload(int client_sock, char *destination, char *filename, long file
 // Hàm handle_download giữ nguyên...
 void handle_download(int client_sock, char *server_path, char *client_name) {
     char filepath[512];
-    sprintf(filepath, "storage/%s", server_path);
+    // Đảm bảo đường dẫn an toàn
+    snprintf(filepath, sizeof(filepath), "storage/%s", server_path);
 
     FILE *fp = fopen(filepath, "rb");
     if (!fp) {
-        // Phòng hờ, dù main.c đã check rồi
-        transfer_log(client_name, "SEND", "FILE_NOT_FOUND 404");
-        send(client_sock, "FILE_NOT_FOUND 404\n", 19, 0);
+        // Thay đổi thông báo lỗi chuẩn hơn
+        transfer_log(client_name, "SEND", "DOWNLOAD ERR_FILE_NOT_FOUND");
+        send(client_sock, "DOWNLOAD ERR_FILE_NOT_FOUND\n", 28, 0);
         return;
     }
 
@@ -97,11 +98,12 @@ void handle_download(int client_sock, char *server_path, char *client_name) {
     long filesize = ftell(fp);
     rewind(fp);
 
-    // Gửi thông tin file
+    // Thay đổi thông báo sẵn sàng: READY_DOWNLOAD OK <filesize>
     char response[256];
-    sprintf(response, "DOWNLOAD 200 %ld 0\n", filesize);
+    snprintf(response, sizeof(response), "READY_DOWNLOAD OK %ld\n", filesize);
     send(client_sock, response, strlen(response), 0);
-    transfer_log(client_name, "SEND", "READY-DOWNLOAD OK");
+    
+    transfer_log(client_name, "SEND", "READY_DOWNLOAD OK %ld", filesize);
 
     long total_chunks = (filesize + BUFFER_SIZE - 1) / BUFFER_SIZE;
     if (total_chunks == 0) total_chunks = 1;
@@ -116,15 +118,17 @@ void handle_download(int client_sock, char *server_path, char *client_name) {
         
         char *b64 = base64_encode((unsigned char*)buffer, bytes_read);
         if (b64) {
-            // Log server_path cho gọn
+            // Log đồng bộ format với Upload
             transfer_log(client_name, "SEND", "DOWNLOAD %ld %d/%ld \"%s\" %s", 
                          filesize, chunk_count, total_chunks, server_path, b64);
             free(b64);
         }
     }
 
+    // Gửi chunk kết thúc (0 bytes)
     send_chunk(client_sock, NULL, 0);
     fclose(fp);
 
-    transfer_log(client_name, "SEND", "DONE-DOWNLOAD OK");
+    // Log hoàn tất chuẩn format
+    transfer_log(client_name, "SEND", "DONE_DOWNLOAD OK");
 }

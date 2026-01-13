@@ -135,8 +135,9 @@ int main() {
                 case 1: // Logout
                     req_logout(sock);
                     is_logged_in = 0;
-                    strcpy(current_user, "");
+                    // strcpy(current_user, "");
                     printf("Logged out successfully.\n");
+                    strcpy(current_user, "");
                     break;
 
                 // --- GROUP GENERAL ---

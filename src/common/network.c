@@ -1,9 +1,10 @@
 #include "protocol.h"
 #include <sys/socket.h>
+#include <stddef.h>
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <stdio.h>
-
+#include <errno.h>
 // Hàm đảm bảo nhận đủ n bytes (Fix lỗi TCP fragmentation)
 int recv_n_bytes(int sock, void *buffer, int n) {
     int bytes_read = 0;
@@ -46,4 +47,33 @@ int recv_chunk(int sock, char *buffer) {
     if (recv_n_bytes(sock, buffer, len) <= 0) return -1;
     
     return len; // Trả về số byte dữ liệu thực tế
+}
+
+ssize_t recv_line(int sock, char *buffer, size_t max_len) {
+    size_t i = 0;
+    char c;
+    ssize_t n;
+
+    while (i < max_len - 1) {
+        // Đọc từng byte một để tránh đọc lẹm vào phần dữ liệu binary phía sau
+        n = recv(sock, &c, 1, 0);
+        
+        if (n > 0) {
+            buffer[i++] = c;
+            if (c == '\n') {
+                break; // Gặp xuống dòng thì dừng
+            }
+        } else if (n == 0) {
+            // Client đóng kết nối
+            if (i == 0) return 0;
+            break;
+        } else {
+            // Lỗi (n < 0)
+            if (errno == EINTR) continue;
+            return -1;
+        }
+    }
+
+    buffer[i] = '\0'; // Kết thúc chuỗi
+    return i;
 }
