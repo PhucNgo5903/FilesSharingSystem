@@ -58,25 +58,57 @@ static void input_text(const char *prompt, char *buf, size_t sz) {
 void handle_lsmem(int sock) {
     char gname[MAX_NAME];
     input_text("Enter the group name to view members: ", gname, sizeof(gname));
-    if (!gname[0]) { printf("Group name cannot be empty.\n"); return; }
+    
+    if (strlen(gname) == 0) {
+        printf("--> Error: Group name cannot be empty.\n");
+        return; 
+    }
 
+    // Gửi lệnh: LSMEM <group_name>
     char req[BUF_SIZE];
     snprintf(req, sizeof(req), "LSMEM %s\n", gname);
     send(sock, req, strlen(req), 0);
 
+    // Nhận phản hồi
     char resp[BUF_SIZE];
     if (recv_line(sock, resp, sizeof(resp)) <= 0) return;
 
-    if (strncmp(resp, "LSMEM ERR_NOT_LOGIN", 19) == 0) {
-        printf("Error: You are not logged in.\n");
-    } else if (strncmp(resp, "LSMEM ERR_NOT_FOUND", 19) == 0) {
-        printf("Error: Group not found.\n");
-    } else if (strncmp(resp, "LSMEM OK", 8) == 0) {
-        char *p = resp + 8;
-        while (*p == ' ') p++;
-        printf("Members in group '%s': %s", gname, p); // Server includes \n
-    } else {
-        printf("Server: %s", resp);
+    // Xử lý hiển thị
+    if (strncmp(resp, "LSMEM OK", 8) == 0) {
+        char *p = resp + 8; // Bỏ qua "LSMEM OK"
+        while (*p == ' ') p++; // Bỏ khoảng trắng thừa
+        
+        // Chuỗi server trả về dạng: "Owner Mem1 Mem2 Mem3..."
+        // Token đầu tiên luôn là Owner
+        char *token = strtok(p, " \n");
+        
+        printf("\nMEMBERS OF GROUP '%s'\n", gname);
+        if (token != NULL) {
+            printf("OWNER: %s\n", token); // Người đầu tiên
+            
+            // Các token tiếp theo là thành viên
+            int count = 0;
+            printf("MEMBERS: ");
+            while ((token = strtok(NULL, " \n")) != NULL) {
+                if (count > 0) printf(", ");
+                printf("%s", token);
+                count++;
+            }
+            
+            if (count == 0) printf("(None)");
+            printf("\n");
+        } else {
+            printf("--> Group is empty (Strange error).\n");
+        }
+    } 
+    else if (strncmp(resp, "LSMEM ERR_NOT_FOUND", 19) == 0) {
+        printf("--> Error: Group '%s' does not exist.\n", gname);
+    } 
+    else if (strncmp(resp, "LSMEM ERR_NOT_LOGIN", 19) == 0) {
+        printf("--> Error: You must login first.\n");
+    } 
+    else {
+        printf("--> Server Error: %s", resp);
     }
 }
 

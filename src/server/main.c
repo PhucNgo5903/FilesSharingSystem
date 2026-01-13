@@ -151,24 +151,15 @@ void handle_client(int client_sock) {
         // ================== MEMBER MANAGEMENT ==================
         else if (strcmp(cmd, "LSMEM") == 0) {
             server_log_main(client_name, "RECV", "%s", buffer);
-            if (!is_logged_in) { 
-                send(client_sock, "LSMEM ERR_NOT_LOGIN\n", 20, 0); 
-                server_log_main(client_name, "SEND", "LSMEM ERR_NOT_LOGIN");
-                continue; 
-            }
-            if (!check_user_in_group(client_name, arg1)) { 
-                send(client_sock, "LSMEM ERR_NOT_FOUND\n", 20, 0); 
-                server_log_main(client_name, "SEND", "LSMEM ERR_NOT_FOUND");
-                continue; 
-            }
-
-            char resp[4096];
-            get_group_members_string(arg1, resp, sizeof(resp));
-            send(client_sock, resp, strlen(resp), 0);
+            char *group_name = arg1; // Tên nhóm gửi lên
+            char result[BUFSIZ];
+            // Hàm này của bạn đã viết đúng, nó sẽ lấy toàn bộ thành viên
+            get_group_members_string(group_name, result, sizeof(result));
             
-            // --- SỬA ĐỔI: Log chính xác chuỗi gửi đi (LSMEM OK ...) ---
-            server_log_main(client_name, "SEND", "%s", resp);
+            send(client_sock, result, strlen(result), 0);
+            server_log_main(client_name, "SEND", "%s", result);
         }
+
         else if (strcmp(cmd, "LEAVE") == 0) {
             server_log_main(client_name, "RECV", "%s", buffer);
             if (!is_logged_in) { 
